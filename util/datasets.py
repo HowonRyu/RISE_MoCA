@@ -162,7 +162,7 @@ class RISE(Dataset):
 
         idx = 0
         for i in range(n_split):
-            print(f"{i}/{last_split} split loading")
+            print(f"{i}/{n_split} split loading")
             
             if not subject_level_analysis:
                 X_path = os.path.join(data_path, f"{i}/X_{prefix}.pt")
@@ -181,54 +181,76 @@ class RISE(Dataset):
 
             gc.collect()
             idx += n
-            print(f"{i}/{last_split} split done")
+            print(f"{i}/{n_split} split done")
 
-        print(f"Data loading all done: -------- # X {prefix} samples = {total_samples}")
+        print(f"Data loading all done: # X {prefix} samples = {total_samples}")
 
 
         # add treatment label features
 
         # exclusion rules according to {0: "sedentary", 1:"standing", 2:"stepping", 3:"cycling", 4:"sleeping", 5:"lying", 6:"seated_transport", -9:"transition"}
-        excl_mask = (self.y.squeeze()==-1) |   (self.y.squeeze()==3) | (self.y.squeeze()==4)
-        excl_34_mask = ((self.sleeping==1) & (self.y.squeeze() != 4)   )
-        excl_org_labs_mask = (self.labels == -1).any(dim=1) | (self.labels == 3).any(dim=1) | (self.labels == 4).any(dim=1) 
 
-        final_excl_mask = (excl_mask | excl_34_mask | excl_org_labs_mask)
+        y_flat = self.y[:, 0]
 
-        self.X = self.y[~final_excl_mask]
-        self.y = self.y[~final_excl_mask]
-        self.labels = self.labels[~final_excl_mask]
-        self.time = self.time[~final_excl_mask]
-        self.visit = self.y[~final_excl_mask]
-        self.id = self.id[~final_excl_mask]
-        self.sleeping = self.sleeping[~final_excl_mask]
+        # Compute indices to exclude
+        keep_mask = ~( (y_flat == -1) | (y_flat == 3) | (y_flat == 4) |
+                      ((self.sleeping[:, 0] == 1) & (y_flat != 4)) |
+                      (self.labels == -1).any(dim=1) |
+                      (self.labels == 3).any(dim=1) |
+                      (self.labels == 4).any(dim=1) )
 
-        print(f"( After Exclusion )# X {prefix} samples = {len(self.y)}")
+        keep_idx = keep_mask.nonzero(as_tuple=True)[0]
+
+        #print(f"keep_mask created")
+
+        #excl_mask = (self.y.squeeze()==-1) |   (self.y.squeeze()==3) | (self.y.squeeze()==4)
+        #excl_34_mask = ((self.sleeping==1) & (self.y.squeeze() != 4)   )
+        #excl_org_labs_mask = (self.labels == -1).any(dim=1) | (self.labels == 3).any(dim=1) | (self.labels == 4).any(dim=1) 
+        #final_excl_mask = (excl_mask | excl_34_mask | excl_org_labs_mask)
+
+        if not subject_level_analysis:
+            self.X = self.X[keep_idx]
+        
+        for attr in ["y", "labels", "time", "visit", "id", "sleeping"]:
+            t = getattr(self, attr)
+            setattr(self, attr, t[keep_idx])
+            del t
+
+        gc.collect()
+        #print(f"masking done")
+        print(f"After Exclusion: # X {prefix} samples = {len(self.y)}")
     
         # re-define the mapping
-        self.y[self.y.squeeze == -9 ] = 7  # transition is now 7 w/ {0: "sedentary", 1:"standing", 2:"stepping", 5:"lying", 6:"seated_transport", 7:"transition"}
-        self.y[self.y.squeeze() > 2] =- 2  # now {0: "sedentary", 1:"standing", 2:"stepping", 3:"lying", 4:"seated_transport", 5:"transition"}
+        self.y[self.y == -9 ] = 7  # transition is now 7 w/ {0: "sedentary", 1:"standing", 2:"stepping", 5:"lying", 6:"seated_transport", 7:"transition"}
+        
+        #print(f"unique y before: {np.unique(self.y)}, shape: {self.y.shape}")
+        #print(f"self.y > 2 {np.sum(self.y > 2)}")
+        self.y[self.y > 2] -= 2  # now {0: "sedentary", 1:"standing", 2:"stepping", 3:"lying", 4:"seated_transport", 5:"transition"}
 
-
+        #print(f"unique y: {np.unique(self.y)}, shape: {self.y.shape}")
         if use_transition_sub_label:
-            transition_mask = (self.y.squeeze() == 5)
+            transition_mask = (self.y[:,0] == 5)
+            #print(f"transition_mask: {len(transition_mask)}")
             trans_labels_org = self.labels[transition_mask]
+            trans_labels_org[trans_labels_org > 2] -= 2 #{0: "sedentary", 1:"standing", 2:"stepping", 3:"lying", 4:"seated_transport"}
+
+            #print(np.unique(trans_labels_org))
             _, _, _, _, categories_4, categories_2  = self.classify_sequences(trans_labels_org.long())
              
-            cat2_mapping = [5,6] #cat4_mapping = [5,6,7,8]
-            trans_bin_mapping = [0, 1, 1, 0, 0, 1, 2]
-            self.y[transition_mask] = cat2_mapping[categories_2] # for now use cat2
+            cat2_mapping = torch.tensor([5,6]).long() #cat4_mapping = [5,6,7,8]
+            self.y[transition_mask] = cat2_mapping[categories_2].unsqueeze(1) # for now use cat2
 
             if RISE_bin_label:
-                trans_bin_mapping = [0, 1, 1, 0, 0, 1, 2]
-                self.y = trans_bin_mapping[self.y.squeeze()]
+                trans_bin_mapping =  torch.tensor([0, 1, 1, 0, 0, 1, 2]).long()
+                self.y = trans_bin_mapping[self.y[:,0]].unsqueeze(1)
+
         else:
             if RISE_bin_label:
-                bin_mapping = [0, 1, 1, 0, 0, 1]
-                self.y = bin_mapping[self.y.squeeze()]
+                bin_mapping =  torch.tensor([0, 1, 1, 0, 0, 1]).long()
+                self.y = bin_mapping[self.y[:,0]].unsqueeze(1)
 
 
-        print(f"unique y: {np.unique(self.y.squeeze())}") # sanity check
+        print(f"unique y: {np.unique(self.y[:,0])}") # sanity check
 
 
 
@@ -238,15 +260,19 @@ class RISE(Dataset):
             per_channel_std = self.X.std(dim=(0,1,2), keepdim=True)
             self.X = (self.X - per_channel_mean) / (per_channel_std)
 
-        if alt:
+        if alt &  (not subject_level_analysis):
             self.X = self.X.permute(0, 3, 2, 1)  # (N, H', W, C') = (N, C, W, H) = (N, 3, L, 1)
 
-
-        self.X = self.X.permute(0,3,1,2) # conform to (N, 1, H, W) = (N, 1, 3, L)
+        if not subject_level_analysis:
+            self.X = self.X.permute(0,3,1,2) # conform to (N, 1, H, W) = (N, 1, 3, L)
+            
         self.normalization = normalization
         self.transform = transform
         self.mix_up = mix_up
-        self.shape = [self.X.shape, self.y.shape]
+        if not subject_level_analysis:
+            self.shape = [self.X.shape, self.y.shape]
+        else:
+            self.shape = self.y.shape
         self.RISE_hz = RISE_hz
         self.hz_adjustment = hz_adjustment
 
@@ -301,7 +327,7 @@ class RISE(Dataset):
         if False:
             mapping = torch.tensor([0, 1, 1, 1, 0, 0, 0], dtype=torch.long)  #([-1,  0,  1,  2,  3,  4,  5,  6])
         else:
-            mapping = torch.tensor([0, 1, 1, 0, 0], dtype=torch.long)  #{0: "SEDENTARY", 1: "STANDING", 2: "STEPPING", 3: "LYING", 4: "SEATED_TRANSPORT", 5:"TRANSITION"}
+            mapping = torch.tensor([0, 1, 1, 0, 0], dtype=torch.long)  # 0: "sedentary", 1:"standing", 2:"stepping", 3:"lying", 4:"seated_transport"
 
         x_bin = mapping[x]
 
