@@ -31,10 +31,9 @@ from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 
 import util.lr_decay as lrd
 import util.misc as misc
-from RISE_PH.RISE_MoCA.util.datasets_org import build_dataset
 from util.pos_embed import interpolate_pos_embed
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
-from RISE_PH.RISE_MoCA.util.datasets_org import *
+from util.datasets import *
 import util.misc as misc
 
 import models_vit
@@ -183,6 +182,13 @@ def get_args_parser():
     parser.add_argument("--SCV", default=False, action='store_true', help="Do subject-level 5-fold CV")
     parser.add_argument('--fold', default=0, type=int, 
                         help='cross-validation folds')
+    parser.add_argument('--use_transition_sub_label', action='store_true',
+                        help='use transition sub-category labels')
+    parser.set_defaults(use_transition_sub_label=False)  
+    parser.add_argument('--RISE_bin_label', action='store_true',
+                        help='collapse label into sed/act/mixed')
+    parser.set_defaults(RISE_bin_label=False) 
+
     
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
@@ -251,10 +257,12 @@ def main(args):
             dataset_train = RISE(data_path=args.data_path, is_test=False, normalization=args.normalization,
                                 normalization_chan=args.normalization_chan, RISE_hz = args.RISE_hz,
                                 mix_up=False, alt=args.alt,transform=args.transform,
+                                RISE_bin_label=args.RISE_bin_label, use_transition_sub_label=args.use_transition_sub_label,
                                 hz_adjustment = args.hz_adjustment, padding_transform=args.padding_transform)
             dataset_val = RISE(data_path=args.data_path, is_test=True, normalization=args.normalization,
                                 normalization_chan=args.normalization_chan, RISE_hz = args.RISE_hz,
                                 mix_up=False, alt=args.alt, transform=args.transform,
+                                RISE_bin_label=args.RISE_bin_label, use_transition_sub_label=args.use_transition_sub_label,
                                 hz_adjustment = args.hz_adjustment, padding_transform=args.padding_transform)
     print("finished data loading")
 

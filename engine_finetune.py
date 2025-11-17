@@ -104,7 +104,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, RISE_collapse_labels=False, plot_save_name=None, plot_title=None):
+def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, RISE_collapse_labels=False, plot_save_name=None, plot_title=None, save_predictions=False):
     criterion = torch.nn.CrossEntropyLoss()
 
     metric_logger = misc.MetricLogger(delimiter="  ")
@@ -133,7 +133,7 @@ def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, RISE
         targets.append(target.cpu().numpy().tolist())
 
 
-        acc1, acc3 = accuracy(output, target, topk=(1, 3))     # changed - to top 3
+        acc1, acc2 = accuracy(output, target, topk=(1, 2))     # changed - to top 2
         f1 = f1_score(target.cpu().numpy(), pred.cpu().numpy(), average='weighted')
         metric_logger.update(F1=f1)  
         
@@ -141,16 +141,16 @@ def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, RISE
         metric_logger.update(loss=loss.item())
 
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
-        metric_logger.meters['acc3'].update(acc3.item(), n=batch_size)
+        metric_logger.meters['acc2'].update(acc2.item(), n=batch_size)
 
     
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    print(f'* Acc@1 {metric_logger.meters["acc1"].global_avg:.3f} '
-        f'Acc@3 {metric_logger.meters["acc3"].global_avg:.3f} '
+    print(f'* Acc@1 {metric_logger.meters["acc1"].global_avg:.4f} '
+        f'Acc@3 {metric_logger.meters["acc2"].global_avg:.3f} '
         f'loss {metric_logger.meters["loss"].global_avg:.3f} '
-        f'F1 {metric_logger.meters["F1"].global_avg:.3f}')
+        f'F1 {metric_logger.meters["F1"].global_avg:.2f}')
 
 
     if confusion_matrix_plot:
@@ -174,9 +174,9 @@ def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, RISE
                     yticklabels=labels, cbar=False, linewidth=.5, annot_kws={"fontsize":16})
         plt.xlabel('Predicted Labels', fontsize=13)
         plt.ylabel('True Labels', fontsize=13)
-        plt.title(f'{plot_title}; Accuracy = {final_acc1:.3f}')
+        plt.title(f'{plot_title}; Accuracy = {final_acc1:.4f}')
         plt.show()
-        plt.savefig(f'/niddk-data-central/P2/mae_hr/MAE_Accelerometer/plots/{plot_save_name}_confusion_matrix.png', bbox_inches='tight')
+        plt.savefig(f'/niddk-data-central/P2/mae_hr/RISE_PH/plots/{plot_save_name}_confusion_matrix.png', bbox_inches='tight')
 
         if RISE_collapse_labels:
             mapping = {0:0, 1:1, 2:1, 3:1, 4:0, 5:0, 6:0}
