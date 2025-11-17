@@ -15,6 +15,8 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 import os
 import torch.nn.functional as F
+import gc
+
 
 from torchvision import datasets, transforms
 import torch
@@ -136,14 +138,14 @@ class RISE(Dataset):
 
         if is_test:
             prefix = "test"
-            last_split = 1
-            time_df_path = os.path.join(data_path, f"{last_split}/time_dist_df_{prefix}.csv")
+            n_split = 2
+            time_df_path = os.path.join(data_path, f"{n_split-1}/time_dist_df_{prefix}.csv")
             time_dist_df = pd.read_csv(time_df_path)
             total_samples = np.sum(time_dist_df['num_inputs_aftex'].values)
         else:
             prefix = "train"
-            last_split = 2
-            time_df_path = os.path.join(data_path, f"{last_split}/time_dist_df_{prefix}.csv")
+            n_split = 3
+            time_df_path = os.path.join(data_path, f"{n_split-1}/time_dist_df_{prefix}.csv")
             time_dist_df = pd.read_csv(time_df_path)
             total_samples = np.sum(time_dist_df['num_inputs_aftex'].values)          
         
@@ -159,43 +161,29 @@ class RISE(Dataset):
         self.sleeping = torch.empty((total_samples,1), dtype=torch.long)
 
         idx = 0
-        for i in range(last_split):
+        for i in range(n_split):
             print(f"{i}/{last_split} split loading")
             
             if not subject_level_analysis:
                 X_path = os.path.join(data_path, f"{i}/X_{prefix}.pt")
-            y_path = os.path.join(data_path, f"{i}/y_{prefix}.pt")
-            labels_path = os.path.join(data_path, f"{i}/labels_{prefix}.pt")
-            time_path = os.path.join(data_path, f"{i}/time_{prefix}.pt")
-            visit_path = os.path.join(data_path, f"{i}/visit_{prefix}.pt")
-            id_path = os.path.join(data_path, f"{i}/id_{prefix}.pt")
-            sleeping_path = os.path.join(data_path, f"{i}/sleeping_{prefix}.pt")
-
-
-            if not subject_level_analysis:
                 X_part = torch.load(X_path)
-            y_part = torch.load(y_path)
-            labels_part = torch.load(labels_path)
-            time_part = torch.load(time_path)
-            visit_part = torch.load(visit_path)
-            id_part = torch.load(id_path)
-            sleeping_part = torch.load(sleeping_path)
-
-            print(y_part.shape, labels_part.shape, time_part.shape, id_part.shape, visit_part.shape, sleeping_part.shape)
-            n = y_part.shape[0]
-            if not subject_level_analysis:
+                n = X_part.shape[0]
                 self.X[idx:idx+n] = X_part
-            self.y[idx:idx+n] = y_part
-            self.labels[idx:idx+n] = labels_part
-            self.time[idx:idx+n] = time_part
-            self.visit[idx:idx+n] = visit_part
-            self.id[idx:idx+n] = id_part
-            self.sleeping[idx:idx+n] = sleeping_part
+                del X_part
             
+            
+            for name in ["y", "labels", "time", "visit", "id", "sleeping"]:
+                path = os.path.join(data_path, f"{i}/{name}_{prefix}.pt")
+                part = torch.load(path)
+                n = part.shape[0]
+                getattr(self, name)[idx:idx+n] = part
+                del part
+
+            gc.collect()
             idx += n
             print(f"{i}/{last_split} split done")
 
-        print(f"# X {prefix} samples = {total_samples}")
+        print(f"Data loading all done: -------- # X {prefix} samples = {total_samples}")
 
 
         # add treatment label features
