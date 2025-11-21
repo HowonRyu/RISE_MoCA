@@ -104,7 +104,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, RISE_collapse_labels=False, plot_save_name=None, plot_title=None, save_predictions=False):
+def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, plot_save_name=None, plot_title=None, save_predictions=False):
     criterion = torch.nn.CrossEntropyLoss()
 
     metric_logger = misc.MetricLogger(delimiter="  ")
@@ -148,7 +148,7 @@ def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, RISE
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print(f'* Acc@1 {metric_logger.meters["acc1"].global_avg:.4f} '
-        f'Acc@3 {metric_logger.meters["acc2"].global_avg:.3f} '
+        f'Acc@2 {metric_logger.meters["acc2"].global_avg:.3f} '
         f'loss {metric_logger.meters["loss"].global_avg:.3f} '
         f'F1 {metric_logger.meters["F1"].global_avg:.2f}')
 
@@ -156,10 +156,24 @@ def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, RISE
     if confusion_matrix_plot:
         preds_list = list(itertools.chain.from_iterable(preds))
         targets_list = list(itertools.chain.from_iterable(targets))
+
+        if save_predictions == True:
+            torch.save(torch.tensor(preds_list), f'{args.data_path}/{plot_save_name}_pred.pt')
+
+
         if args.data == "UCIHAR":
             labels = ['Transition', 'Walking', 'Walking-upstairs', 'Walking-downstairs', 'Sitting', 'Standing', 'Laying']
         if args.data == "RISE":
-            labels = ["sedentary", "standing", "stepping", "cycling", "primary_lying", "secondary_lying", "seated_transport"]
+            if args.use_transition_sub_label:
+                if args.RISE_bin_label:
+                    labels = ["sedentary", "active", "mixed"]
+                else:
+                    labels = ["sedentary", "standing", "stepping", "lying", "seated_transport", "active_transition", "mixed_transition"]
+            else:
+                if args.RISE_bin_label:
+                    labels = ["sedentary", "active"]
+                else:
+                    labels = ["sedentary", "standing", "stepping", "lying", "seated_transport", "transition"]
 
         preds_tensor = torch.tensor(preds_list)
         targets_tensor = torch.tensor(targets_list)
@@ -177,32 +191,6 @@ def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, RISE
         plt.title(f'{plot_title}; Accuracy = {final_acc1:.4f}')
         plt.show()
         plt.savefig(f'/niddk-data-central/P2/mae_hr/RISE_PH/plots/{plot_save_name}_confusion_matrix.png', bbox_inches='tight')
-
-        if RISE_collapse_labels:
-            mapping = {0:0, 1:1, 2:1, 3:1, 4:0, 5:0, 6:0}
-            preds_list_bin = [mapping[x] for x in preds_list]
-            targets_list_bin = [mapping[x] for x in targets_list]
-            labels = ['Sedentary', 'Active']
-
-            preds_bin_tensor = torch.tensor(preds_list_bin)
-            targets_bin_tensor = torch.tensor(targets_list_bin)
-
-            final_bin_accordance = (preds_bin_tensor == targets_bin_tensor)
-            final_bin_acc1 = final_bin_accordance.sum().item() / len(preds_list)
-
-            # plot the confusion matrix - binary version
-            cm_test_bin = confusion_matrix(targets_list_bin, preds_list_bin)
-
-
-            plt.figure(figsize=(8, 8))
-            sns.heatmap(cm_test_bin, annot=True, cmap='Blues', fmt='d', xticklabels=labels,
-                        yticklabels=labels, cbar=False, linewidth=.5, annot_kws={"fontsize":16})
-            plt.xlabel('Predicted Labels', fontsize=13)
-            plt.ylabel('True Labels', fontsize=13)
-            plt.title(f'{plot_title}(binary); Accuracy = {final_bin_acc1:.3f}')
-            plt.show()
-            plt.savefig(f'/niddk-data-central/P2/mae_hr/MAE_Accelerometer/plots/{plot_save_name}_bin_confusion_matrix.png', bbox_inches='tight')
-
 
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
