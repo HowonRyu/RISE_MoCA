@@ -171,9 +171,7 @@ def get_args_parser():
     parser.set_defaults(confusion_matrix_plot=False)
     parser.add_argument('--plot_save_name', type=str, default=None)
     parser.add_argument('--plot_title', type=str, default=None)
-    parser.add_argument('--RISE_collapse_labels', action='store_true')
-    parser.set_defaults(RISE_collapse_labels=False)
-    
+
     return parser
 
 
@@ -375,9 +373,9 @@ def main(args):
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
     if args.eval:
-        test_stats = evaluate(data_loader=data_loader_val, model=model, device=device,
-        confusion_matrix_plot=args.confusion_matrix_plot, RISE_collapse_labels=args.RISE_collapse_labels, plot_save_name=args.plot_save_name, plot_title=args.plot_title)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        test_stats = evaluate(data_loader=data_loader_val, model=model, device=device, args=args,
+                              confusion_matrix_plot=args.confusion_matrix_plot, plot_save_name=args.plot_save_name, plot_title=args.plot_title)
+        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.4f}%")
         exit(0)
 
     print(f"Start training for {args.epochs} epochs")
@@ -399,13 +397,13 @@ def main(args):
                 loss_scaler=loss_scaler, epoch=epoch)
 
         test_stats = evaluate(data_loader_val, model, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.4f}%")
         max_accuracy = max(max_accuracy, test_stats["acc1"])
-        print(f'Max accuracy: {max_accuracy:.2f}%')
+        print(f'Max accuracy: {max_accuracy:.4f}%')
 
         if log_writer is not None:
             log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
-            log_writer.add_scalar('perf/test_acc3', test_stats['acc3'], epoch) # changed 
+            log_writer.add_scalar('perf/test_acc2', test_stats['acc2'], epoch) # changed 
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},

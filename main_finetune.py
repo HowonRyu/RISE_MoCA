@@ -420,8 +420,8 @@ def main(args):
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler) 
 
     if args.eval:
-        test_stats = evaluate(data_loader=data_loader_val, model=model, device=device,
-        confusion_matrix_plot=args.confusion_matrix_plot, RISE_collapse_labels=args.RISE_collapse_labels, plot_save_name=args.plot_save_name, plot_title=args.plot_title)
+        test_stats = evaluate(data_loader=data_loader_val, model=model, device=device, args=args,
+        confusion_matrix_plot=args.confusion_matrix_plot, plot_save_name=args.plot_save_name, plot_title=args.plot_title)
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
         exit(0)
 
@@ -450,7 +450,7 @@ def main(args):
 
         if log_writer is not None:
             log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
-            log_writer.add_scalar('perf/test_acc3', test_stats['acc3'], epoch) # changed - changed to acc3
+            log_writer.add_scalar('perf/test_acc2', test_stats['acc2'], epoch) # changed - changed to acc3
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},

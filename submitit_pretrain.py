@@ -94,9 +94,12 @@ class Trainer(object):
     def _setup_gpu_args(self):
         import submitit
         from pathlib import Path
+        from datetime import datetime
 
         job_env = submitit.JobEnvironment()
-        self.args.output_dir = Path(str(self.args.output_dir).replace("%j", f"{job_env.job_id}({self.args.job_name})")) # changed - changed from  f"{job_env.job_id}"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        job_id_component = f"{job_env.job_id}({self.args.job_name})"
+        self.args.output_dir = Path(str(self.args.output_dir).replace("%j", f"{timestamp}_{job_id_component}"))  # changed - changed from  f"{job_env.job_id}"
         self.args.log_dir = self.args.output_dir
         self.args.gpu = job_env.local_rank
         self.args.rank = job_env.global_rank
