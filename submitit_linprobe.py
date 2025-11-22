@@ -90,7 +90,6 @@ class Trainer(object):
         from datetime import datetime
 
         job_env = submitit.JobEnvironment()
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M") #############
         job_id_component = f"{job_env.job_id}({self.args.job_name})" ##########
 
         self.args.output_dir = Path(str(self.args.output_dir).replace("%j", f"{job_id_component}"))  # ##############
@@ -107,7 +106,7 @@ def main():
     args, classification = parse_args()
     if args.job_dir == "":
         from datetime import datetime
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M")  #########
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  #########
         args.job_dir = get_shared_folder(wk_dir_path=args.wk_dir) / f"{timestamp}/%j" # ############
 
     # Note that the folder will depend on the job_id, to easily track experiments
