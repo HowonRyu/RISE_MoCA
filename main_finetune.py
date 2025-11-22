@@ -258,12 +258,12 @@ def main(args):
                                 normalization_chan=args.normalization_chan, RISE_hz = args.RISE_hz,
                                 mix_up=False, alt=args.alt,transform=args.transform,
                                 RISE_bin_label=args.RISE_bin_label, use_transition_sub_label=args.use_transition_sub_label,
-                                hz_adjustment = args.hz_adjustment, padding_transform=args.padding_transform)
+                                hz_adjustment = args.hz_adjustment)
             dataset_val = RISE(data_path=args.data_path, is_test=True, normalization=args.normalization,
                                 normalization_chan=args.normalization_chan, RISE_hz = args.RISE_hz,
-                                mix_up=False, alt=args.alt, transform=args.transform,
+                                mix_up=False, alt=args.alt, transform=args.transform, 
                                 RISE_bin_label=args.RISE_bin_label, use_transition_sub_label=args.use_transition_sub_label,
-                                hz_adjustment = args.hz_adjustment, padding_transform=args.padding_transform)
+                                hz_adjustment = args.hz_adjustment)
     print("finished data loading")
 
     # input_dim, input_size, in_chans, patch_size sanity check
