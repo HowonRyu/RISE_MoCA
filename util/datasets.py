@@ -183,6 +183,7 @@ class RISE(Dataset):
             idx += n
             print(f"{i}/{n_split} split done")
 
+        self.y = self.y.squeeze()
         print(f"Data loading all done: # X {prefix} samples = {total_samples}")
 
 
@@ -190,23 +191,17 @@ class RISE(Dataset):
 
         # exclusion rules according to {0: "sedentary", 1:"standing", 2:"stepping", 3:"cycling", 4:"sleeping", 5:"lying", 6:"seated_transport", -9:"transition"}
 
-        y_flat = self.y[:, 0]
 
         # Compute indices to exclude
-        keep_mask = ~( (y_flat == -1) | (y_flat == 3) | (y_flat == 4) |
-                      ((self.sleeping[:, 0] == 1) & (y_flat != 4)) |
+        keep_mask = ~( (self.y == -1) | (self.y == 3) | (self.y == 4) |
+                      ((self.sleeping[:, 0] == 1) & (self.y != 4)) |
                       (self.labels == -1).any(dim=1) |
                       (self.labels == 3).any(dim=1) |
                       (self.labels == 4).any(dim=1) )
 
         keep_idx = keep_mask.nonzero(as_tuple=True)[0]
 
-        #print(f"keep_mask created")
 
-        #excl_mask = (self.y.squeeze()==-1) |   (self.y.squeeze()==3) | (self.y.squeeze()==4)
-        #excl_34_mask = ((self.sleeping==1) & (self.y.squeeze() != 4)   )
-        #excl_org_labs_mask = (self.labels == -1).any(dim=1) | (self.labels == 3).any(dim=1) | (self.labels == 4).any(dim=1) 
-        #final_excl_mask = (excl_mask | excl_34_mask | excl_org_labs_mask)
 
         if not subject_level_analysis:
             self.X = self.X[keep_idx]
@@ -223,13 +218,12 @@ class RISE(Dataset):
         # re-define the mapping
         self.y[self.y == -9 ] = 7  # transition is now 7 w/ {0: "sedentary", 1:"standing", 2:"stepping", 5:"lying", 6:"seated_transport", 7:"transition"}
         
-        #print(f"unique y before: {np.unique(self.y)}, shape: {self.y.shape}")
-        #print(f"self.y > 2 {np.sum(self.y > 2)}")
+
         self.y[self.y > 2] -= 2  # now {0: "sedentary", 1:"standing", 2:"stepping", 3:"lying", 4:"seated_transport", 5:"transition"}
 
         #print(f"unique y: {np.unique(self.y)}, shape: {self.y.shape}")
         if use_transition_sub_label:
-            transition_mask = (self.y[:,0] == 5)
+            transition_mask = (self.y == 5)
             #print(f"transition_mask: {len(transition_mask)}")
             trans_labels_org = self.labels[transition_mask]
             trans_labels_org[trans_labels_org > 2] -= 2 #{0: "sedentary", 1:"standing", 2:"stepping", 3:"lying", 4:"seated_transport"}
@@ -238,20 +232,20 @@ class RISE(Dataset):
             _, _, _, _, categories_4, categories_2  = self.classify_sequences(trans_labels_org.long())
              
             cat2_mapping = torch.tensor([5,6]).long() #cat4_mapping = [5,6,7,8]
-            self.y[transition_mask] = cat2_mapping[categories_2].unsqueeze(1) # for now use cat2
+            self.y[transition_mask] = cat2_mapping[categories_2] # for now use cat2
 
             if RISE_bin_label:
                 trans_bin_mapping =  torch.tensor([0, 1, 1, 0, 0, 1, 2]).long()
-                self.y = trans_bin_mapping[self.y[:,0]].unsqueeze(1)
+                self.y = trans_bin_mapping[self.y]
 
         else:
             if RISE_bin_label:
                 bin_mapping =  torch.tensor([0, 1, 1, 0, 0, 1]).long()
-                self.y = bin_mapping[self.y[:,0]].unsqueeze(1)
+                self.y = bin_mapping[self.y]
 
 
-        print(f"unique y: {np.unique(self.y[:,0])}") # sanity check
-
+        print(f"unique y: {np.unique(self.y)}") # sanity check
+        print(f"y shape: {self.y.shape}") # sanity check
 
 
 

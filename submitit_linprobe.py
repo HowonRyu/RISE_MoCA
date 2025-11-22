@@ -90,10 +90,10 @@ class Trainer(object):
         from datetime import datetime
 
         job_env = submitit.JobEnvironment()
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        job_id_component = f"{job_env.job_id}({self.args.job_name})"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M") #############
+        job_id_component = f"{job_env.job_id}({self.args.job_name})" ##########
 
-        self.args.output_dir = Path(str(self.args.output_dir).replace("%j", f"{timestamp}_{job_id_component}")) 
+        self.args.output_dir = Path(str(self.args.output_dir).replace("%j", f"{job_id_component}"))  # ##############
 
         #self.args.output_dir = Path(str(self.args.output_dir).replace("%j", f"{job_env.job_id}({self.args.job_name})")) # changed - changed from  f"{job_env.job_id}"
         self.args.log_dir = self.args.output_dir
@@ -106,7 +106,9 @@ class Trainer(object):
 def main():
     args, classification = parse_args()
     if args.job_dir == "":
-        args.job_dir = get_shared_folder(wk_dir_path=args.wk_dir) / "%j" # changed - wk_dir_path=args.wk_dir
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")  #########
+        args.job_dir = get_shared_folder(wk_dir_path=args.wk_dir) / f"{timestamp}/%j" # ############
 
     # Note that the folder will depend on the job_id, to easily track experiments
     executor = submitit.AutoExecutor(folder=args.job_dir, slurm_max_num_timeout=30)
