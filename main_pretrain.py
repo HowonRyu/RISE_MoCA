@@ -140,7 +140,9 @@ def get_args_parser():
     parser.add_argument("--SCV", default=False, action='store_true', help="Do subject-level 5-fold CV")
     parser.add_argument('--fold', default=0, type=int, 
                         help='cross-validation folds')
-    
+    parser.add_argument('--active_aug', action='store_true') 
+    parser.set_defaults(active_aug=False)     
+
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
@@ -182,12 +184,12 @@ def main(args):
         dataset_train = Subset(full_dataset, train_indices)
     else:
         if args.data == "UCIHAR":
-            dataset_train = UCIHAR(data_path=args.data_path, is_test=False, normalization=args.normalization,
+            dataset_train = UCIHAR(data_path=args.data_path, is_test=False, normalization=args.normalization, active_aug=args.active_aug,
                                 normalization_chan=args.normalization_chan,
                                 pre_mix_up=False, mix_up=False, alt=args.alt, nb_classes=args.nb_classes, transform=args.transform)
         if args.data == "RISE":
             dataset_train = RISE(data_path=args.data_path, is_test=False, normalization=args.normalization,
-                                normalization_chan=args.normalization_chan, RISE_hz = args.RISE_hz, 
+                                normalization_chan=args.normalization_chan, RISE_hz = args.RISE_hz,  active_aug=args.active_aug,
                                 mix_up=False, alt=args.alt,transform=args.transform, hz_adjustment = args.hz_adjustment)
     print("finished data loading")
 
