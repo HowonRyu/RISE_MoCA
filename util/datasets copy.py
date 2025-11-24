@@ -231,7 +231,7 @@ class RISE(Dataset):
              
             cat2_mapping = torch.tensor([5,6]).long() #cat4_mapping = [5,6,7,8]
             self.y[transition_mask] = cat2_mapping[categories_2] # for now use cat2
-            pre_designated_labels = [1, 2, 5, 6]  # for active augmentation
+
             if RISE_bin_label:
                 trans_bin_mapping =  torch.tensor([0, 1, 1, 0, 0, 1, 2]).long()
                 self.y = trans_bin_mapping[self.y]
@@ -240,8 +240,6 @@ class RISE(Dataset):
             if RISE_bin_label:
                 bin_mapping =  torch.tensor([0, 1, 1, 0, 0, 1]).long()
                 self.y = bin_mapping[self.y]
-            else:
-                pre_designated_labels = [1, 2, 5]
 
 
         print(f"unique y: {np.unique(self.y)}") # sanity check
@@ -261,43 +259,7 @@ class RISE(Dataset):
             self.X = self.X.permute(0,3,1,2) # conform to (N, 1, H, W) = (N, 1, 3, L)
             
 
-        if active_aug & (not subject_level_analysis):
-            print(f"starting data augmentation for labels: {pre_designated_labels}")
-            print(f"# samples before augmentation = {len(self.X)}")
-            self.augmented_methods = []
-            target_ratio = 0.5  
-            
-            # Count per label
-            unique, counts = np.unique(self.y.numpy(), return_counts=True)
-            label_counts = dict(zip(unique, counts))
-            max_count = max(counts)
 
-            print(f"# augmenting labels to {target_ratio} of max label {np.argmax(counts)} ({max_count})")
-
-            X_aug_list = []
-            y_aug_list = []
-
-            for label in pre_designated_labels:
-                current_count = label_counts.get(label, 0)
-                n_to_generate = int(max_count * target_ratio - current_count)
-                print(f"n_to_generate for label {label}= {n_to_generate}")
-                label_idx = (self.y == label).nonzero(as_tuple=True)[0]
-                
-                for i in range(n_to_generate):
-                    idx_sample = label_idx[i % len(label_idx)]
-                    X_sample = self.X[idx_sample]
-                    
-                    X_aug, method = self.augment_tensor(X_sample, seed=(i+10))
-                    
-                    X_aug_list.append(X_aug.unsqueeze(0))
-                    y_aug_list.append(self.y[idx_sample].unsqueeze(0))
-                    self.augmented_methods.append(method)
-
-            if len(X_aug_list) > 0:
-                self.X = torch.cat([self.X] + X_aug_list, dim=0)
-                self.y = torch.cat([self.y] + y_aug_list, dim=0)
-
-            print(f"After stochastic augmentation: # X samples = {self.X.shape[0]}")
 
 
 
@@ -349,54 +311,6 @@ class RISE(Dataset):
         result = torch.cat((chunk1, chunk2), dim=1)
 
         return result
-
-    def augment_tensor(self, X, seed=None, method=None):
-        if seed is not None:
-            torch.manual_seed(seed)
-            np.random.seed(seed)
-
-        if method is None:
-            augmentation_methods = ["rotation", "mixup", "time_warp"]
-            aug_random = random.Random(seed) 
-            method = aug_random.choice(augmentation_methods)
-    
-        X_aug = X.clone()
-        _, C, L = X.shape
-        
-
-        if method == "rotation":
-            # Rotate channels: shuffle 3 channels
-            perm = torch.randperm(C)
-            X_aug = X_aug[:, perm, :]
-            method_0 = 0
-
-        elif method == "mixup":     
-            mix_idx = torch.randint(0, len(self.X), (1,)).item()
-            sample_X2 = self.X[mix_idx]
-            
-            lambada = torch.distributions.Uniform(0, 0.5).sample().item()
-            sample1_size = int(L * lambada)
-
-            chunk1 = X[:, :, :sample1_size]  
-            chunk2 = sample_X2[:, :, sample1_size:]  
-            X_aug = torch.cat((chunk1, chunk2), dim=2)
-            method_0 = 1
-
-        elif method == "time_warp":
-            scale = np.random.uniform(0.7, 1.3)
-            new_L = int(L * scale)
-            X_aug = torch.nn.functional.interpolate(
-                X_aug, size=new_L, mode="linear", align_corners=True)
-            if new_L > L:
-                X_aug = X_aug[:, :, :L]
-            elif new_L < L:
-                pad = L - new_L
-                X_aug = torch.nn.functional.pad(X_aug, (0, pad))
-            method_0 = 2
-        else:
-            raise ValueError(f"Unknown augmentation method: {method}")
-
-        return X_aug, method_0
 
     def classify_sequences(self, x):
         N = x.shape[0]
