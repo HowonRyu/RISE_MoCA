@@ -135,7 +135,7 @@ class UCIHAR(Dataset):
 
 class RISE(Dataset):
     def __init__(self, data_path, alt, is_test=False, normalization_chan=False, use_transition_sub_label = False, RISE_bin_label = False,
-                 normalization=False, transform=False, mix_up=False, RISE_hz = 30, hz_adjustment=False, subject_level_analysis=False, active_aug=False):
+                 normalization=False, transform=False, mix_up=False, RISE_hz = 30, hz_adjustment=False, subject_level_analysis=False, active_aug=False, aug_method=None):
 
         if is_test:
             prefix = "test"
@@ -287,7 +287,7 @@ class RISE(Dataset):
                     idx_sample = label_idx[i % len(label_idx)]
                     X_sample = self.X[idx_sample]
                     
-                    X_aug, method = self.augment_tensor(X_sample, seed=(i+10))
+                    X_aug, method = self.augment_tensor(X_sample, seed=(i+10), method=aug_method)
                     
                     X_aug_list.append(X_aug.unsqueeze(0))
                     y_aug_list.append(self.y[idx_sample].unsqueeze(0))

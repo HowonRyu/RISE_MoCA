@@ -203,8 +203,10 @@ def get_args_parser():
     parser.set_defaults(confusion_matrix_plot=False)
     parser.add_argument('--plot_save_name', type=str, default=None)
     parser.add_argument('--plot_title', type=str, default=None)
-    parser.add_argument('--RISE_collapse_labels', action='store_true')
-    parser.set_defaults(RISE_collapse_labels=False)
+    parser.add_argument('--save_predictions', action='store_true')
+    parser.set_defaults(save_predictions=False)
+
+
 
 
     return parser
