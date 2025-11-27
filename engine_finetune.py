@@ -8,7 +8,7 @@
 # DeiT: https://github.com/facebookresearch/deit
 # BEiT: https://github.com/microsoft/unilm/tree/master/beit
 # --------------------------------------------------------
-
+import os
 import math
 import sys
 from typing import Iterable, Optional
@@ -104,7 +104,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, plot_save_name=None, plot_title=None, save_predictions=False):
+def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, plot_save_name=None, plot_title=None):
     criterion = torch.nn.CrossEntropyLoss()
 
     metric_logger = misc.MetricLogger(delimiter="  ")
@@ -157,7 +157,7 @@ def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, plot
         preds_list = list(itertools.chain.from_iterable(preds))
         targets_list = list(itertools.chain.from_iterable(targets))
 
-        if save_predictions == True:
+        if args.save_predictions == True:
             torch.save(torch.tensor(preds_list), f'{args.data_path}/{plot_save_name}_pred.pt')
 
 
@@ -181,16 +181,39 @@ def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, plot
         final_accordance = (preds_tensor == targets_tensor)
         final_acc1 = final_accordance.sum().item() / len(preds_list)
 
+
+
         # plot confusion matrix
         cm_test = confusion_matrix(targets_list, preds_list)
+
+
+        if (not args.use_transition_sub_label) & (args.RISE_bin_label):
+            TN, FP, FN, TP = cm_test.ravel()
+
+            sensitivity = TP / (TP + FN) if (TP + FN) > 0 else 0   
+            specificity = TN / (TN + FP) if (TN + FP) > 0 else 0   
+            ppv = TP / (TP + FP) if (TP + FP) > 0 else 0       
+            npv = TN / (TN + FN) if (TN + FN) > 0 else 0          
+
+            print(f"Sensitivity (TPR): {sensitivity:.4f}")
+            print(f"Specificity (TNR): {specificity:.4f}")
+            print(f"PPV: {ppv:.4f}")
+            print(f"NPV: {npv:.4f}")
+        
         plt.figure(figsize=(8, 8))
         sns.heatmap(cm_test, annot=True, cmap='Blues', fmt='d', xticklabels=labels,
                     yticklabels=labels, cbar=False, linewidth=.5, annot_kws={"fontsize":16})
         plt.xlabel('Predicted Labels', fontsize=13)
         plt.ylabel('True Labels', fontsize=13)
-        plt.title(f'{plot_title}; Accuracy = {final_acc1:.4f}')
+        
+        if (not args.use_transition_sub_label) & (args.RISE_bin_label):
+            plt.title(f'{plot_title}; Accuracy = {final_acc1:.4f}, sen={sensitivity:.3f}, spec={specificity:.3f}, PPV={ppv:.3f}, NPV={npv:.3f}')
+        else:
+            plt.title(f'{plot_title}; Accuracy = {final_acc1:.4f}')
         plt.show()
-        plt.savefig(f'/niddk-data-central/P2/mae_hr/RISE_PH/plots/{plot_save_name}_confusion_matrix.png', bbox_inches='tight')
+        save_dir = "/niddk-data-central/P2/mae_hr/RISE_PH/plots"
+        os.makedirs(save_dir, exist_ok=True)
+        plt.savefig(f"{save_dir}/{plot_save_name}_confusion_matrix.png", bbox_inches='tight')
 
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}

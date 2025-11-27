@@ -142,6 +142,8 @@ def get_args_parser():
                         help='cross-validation folds')
     parser.add_argument('--active_aug', action='store_true') 
     parser.set_defaults(active_aug=False)     
+    parser.add_argument('--aug_method', default=None, type=str)
+
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
@@ -189,7 +191,7 @@ def main(args):
                                 pre_mix_up=False, mix_up=False, alt=args.alt, nb_classes=args.nb_classes, transform=args.transform)
         if args.data == "RISE":
             dataset_train = RISE(data_path=args.data_path, is_test=False, normalization=args.normalization,
-                                normalization_chan=args.normalization_chan, RISE_hz = args.RISE_hz,  active_aug=args.active_aug,
+                                normalization_chan=args.normalization_chan, RISE_hz = args.RISE_hz,  active_aug=args.active_aug, aug_method=args.aug_method,
                                 mix_up=False, alt=args.alt,transform=args.transform, hz_adjustment = args.hz_adjustment)
     print("finished data loading")
 

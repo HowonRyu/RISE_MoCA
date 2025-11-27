@@ -14,23 +14,33 @@ import models_vit_mask
 from timm.models.layers import trunc_normal_
 
 from util.pos_embed import *
-from RISE_PH.RISE_MoCA.util.datasets_org import *
+from util.datasets import *
 
 
-def load_dataset(data_path, data, test_data=True, RISE_hz=30, alt=True, normalization=False, transform=False):
-    ids = None
-    times = None
-
-    test_train_label = ["train", "test"]
+def load_dataset(data_path, data = "RISE", test_data=True, RISE_hz=30, alt=True, normalization=False,
+                 transform=False, use_transition_sub_label=False, RISE_bin_label=False):
 
     if data == "RISE":
         dataset = RISE(data_path=data_path, is_test=test_data, normalization=normalization,
-                        normalization_chan=False, RISE_hz=RISE_hz,
-                            mix_up=False, alt=alt, transform=transform)
-        labels = ["sedentary", "standing", "stepping", "cycling", "primary_lying", "secondary_lying", "seated_transport"]
-        activity_labels = {0: "SEDENTARY", 1: "STANDING", 2: "STEPPING", 3: "CYCLING", 4: "PRIMARY_LYING", 5: "SECONDARY_LYING", 6: "SEATED_TRANSPORT"}
-        ids = torch.load(os.path.join(data_path, f"id_{test_train_label[test_data]}.pt"))
-        #times = torch.load(os.path.join(data_path, f"time_{test_train_label[test_data]}.pt"))
+                    normalization_chan=False, RISE_hz=RISE_hz, mix_up=False, alt=alt, transform=transform,
+                    use_transition_sub_label=use_transition_sub_label, RISE_bin_label=RISE_bin_label)
+        labels = ["sedentary", "standing", "stepping", "sleeping", "secondary_lying", "seated_transport"]
+
+        if use_transition_sub_label:
+            if RISE_bin_label:
+                labels = ["sedentary", "active", "mixed"]
+                activity_labels = {0.0: "sedentary", 0.1: "active", 0.2: "mixed"}
+            else:
+                labels = ["sedentary", "standing", "stepping", "lying", "seated_transport", "active_transition", "mixed_transition"]
+                activity_labels = {0.0: "sedentary", 0.1: "standing", 0.2: "stepping", 0.3: "lying", 0.4: "seated_transport", 0.5: "active_transition", 0.6:"mixed_transition"}
+        else:
+            if RISE_bin_label:
+                labels = ["sedentary", "active"]
+                activity_labels = {0.0: "sedentary", 0.1: "active"}
+            else:
+                labels = ["sedentary", "standing", "stepping", "lying", "seated_transport", "transition"]
+                activity_labels = {0.0: "sedentary", 0.1: "standing", 0.2: "stepping", 0.3: "lying", 0.4: "seated_transport", 0.5: "transition"}
+        
     elif data == "UCIHAR":
         dataset = UCIHAR(data_path=data_path, is_test=test_data, normalization=normalization,
                         normalization_chan=False, mix_up=False, alt=alt, transform=transform)
@@ -39,7 +49,7 @@ def load_dataset(data_path, data, test_data=True, RISE_hz=30, alt=True, normaliz
         activity_labels = {0: "Transition", 1: "Walking", 2: "Walking-upstairs", 3: "Walking-downstairs",
                             4: "Sitting", 5: "Standing", 6: "Laying"}
 
-    return dataset, labels, activity_labels, ids, times
+    return dataset, labels, activity_labels
 
 
 
@@ -100,7 +110,7 @@ def mae_reconstruction_pass(x, model, alt, mask_ratio=0.75, norm_pix_loss=False,
     #print("y shape:", y.shape, ", mask (1-remove or 0-keep) shape:", mask.shape)
 
     y = model.unpatchify(y)
-    y = torch.einsum('nchw->nhwc', y).detach().cpu()
+    y = torch.einsum('nchw->nhwc', y).detach() #.cpu()
 
 
     # make mask into the same dimension as x so we can apply operation in the next step
@@ -109,7 +119,7 @@ def mae_reconstruction_pass(x, model, alt, mask_ratio=0.75, norm_pix_loss=False,
     mask = mask.unsqueeze(-1).repeat(1, 1, model.patch_embed.patch_size[0]* model.patch_embed.patch_size[1] * in_chans)  # (N, H*W, p0*p1*3)  #changed
     
     mask = model.unpatchify(mask)  # 1 is removing, 0 is keeping
-    mask = torch.einsum('nchw->nhwc', mask).detach().cpu()
+    mask = torch.einsum('nchw->nhwc', mask).detach() #.cpu()
     #print("mask shape after:", mask.shape)
 
 
@@ -244,11 +254,11 @@ def mae_reconstruction_loop(model, dataset, batch_size, mask_ratio, alt, norm_pi
         loss_MSE: (N/BS,)
         loss_nMSE: (N/BS,)
     """
-    masked_all = torch.Tensor()
-    paste_all = torch.Tensor()
-    x_prime_all = torch.Tensor()
-    y_all = torch.Tensor()
-    x_squeeze_all = torch.Tensor()
+    masked_all = torch.Tensor().to(device)
+    paste_all = torch.Tensor().to(device)
+    x_prime_all = torch.Tensor().to(device)
+    y_all = torch.Tensor().to(device)
+    x_squeeze_all = torch.Tensor().to(device)
     loss_MSE = list()
     loss_nMSE = list()
 
@@ -261,7 +271,7 @@ def mae_reconstruction_loop(model, dataset, batch_size, mask_ratio, alt, norm_pi
         masked, paste, x_prime, y, loss = mae_reconstruction_pass(x=x, model=model, mask_ratio=mask_ratio, alt=alt, 
                                                                   norm_pix_loss=norm_pix_loss, import_mask=import_mask)
 
-        x_squeeze = x.squeeze(dim=0)
+        x_squeeze = x.squeeze(dim=0).to(device)
         masked_all = torch.cat((masked_all, masked), dim=0)
         paste_all = torch.cat((paste_all, paste), dim=0)
         x_prime_all = torch.cat((x_prime_all, x_prime), dim=0)
@@ -269,11 +279,11 @@ def mae_reconstruction_loop(model, dataset, batch_size, mask_ratio, alt, norm_pi
   
         # loss
         if alt:
-            loss_MSE.append(loss[0].detach().numpy())
-            loss_nMSE.append(loss[1].detach().numpy())
+            loss_MSE.append(loss[0].detach().cpu().numpy())
+            loss_nMSE.append(loss[1].detach().cpu().numpy())
         else:
-            loss_MSE.append(loss[0][0].detach().numpy())
-            loss_nMSE.append(loss[0][1].detach().numpy())
+            loss_MSE.append(loss[0][0].detach().cpu().numpy())
+            loss_nMSE.append(loss[0][1].detach().cpu().numpy())
 
 
         x_squeeze_all = torch.cat((x_squeeze_all, x_squeeze), dim=0)
