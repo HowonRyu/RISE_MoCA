@@ -220,6 +220,7 @@ class RISE(Dataset):
         self.y[self.y == -9 ] = 7  # transition is now 7 w/ {0: "sedentary", 1:"standing", 2:"stepping", 5:"lying", 6:"seated_transport", 7:"transition"}
         self.y[self.y > 2] -= 2  # now {0: "sedentary", 1:"standing", 2:"stepping", 3:"lying", 4:"seated_transport", 5:"transition"}
 
+        self.labels[self.labels > 2] -= 2
 
         if use_transition_sub_label:
             transition_mask = (self.y == 5)
