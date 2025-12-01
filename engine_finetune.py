@@ -211,8 +211,7 @@ def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, plot
         else:
             plt.title(f'{plot_title}; Accuracy = {final_acc1:.4f}')
         plt.show()
-        save_dir = "/niddk-data-central/P2/mae_hr/RISE_PH/plots"
-        os.makedirs(save_dir, exist_ok=True)
+        save_dir = "/niddk-data-central/mae_hr/RISE_PH/plots"
         plt.savefig(f"{save_dir}/{plot_save_name}_confusion_matrix.png", bbox_inches='tight')
 
 
