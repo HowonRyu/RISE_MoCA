@@ -173,6 +173,8 @@ def get_args_parser():
     parser.add_argument('--plot_title', type=str, default=None)
     parser.add_argument('--save_predictions', action='store_true')
     parser.set_defaults(save_predictions=False)
+    parser.add_argument('--train_eval', action='store_true')
+    parser.set_defaults(train_eval=False)
 
     return parser
 
