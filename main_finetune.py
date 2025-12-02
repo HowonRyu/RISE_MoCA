@@ -205,11 +205,11 @@ def get_args_parser():
     parser.add_argument('--plot_title', type=str, default=None)
     parser.add_argument('--save_predictions', action='store_true')
     parser.set_defaults(save_predictions=False)
-
-
-
+    parser.add_argument('--train_eval', action='store_true')
+    parser.set_defaults(train_eval=False)
 
     return parser
+
 
 
 def main(args):
@@ -300,13 +300,22 @@ def main(args):
     else:
         log_writer = None
 
-    data_loader_train = torch.utils.data.DataLoader(
-        dataset_train, sampler=sampler_train,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
-        drop_last=True,
-    )
+    if args.eval:
+        data_loader_train = torch.utils.data.DataLoader(
+            dataset_train, sampler=sampler_train,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=False,
+        )
+    else:
+        data_loader_train = torch.utils.data.DataLoader(
+            dataset_train, sampler=sampler_train,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=True,
+        )
 
     data_loader_val = torch.utils.data.DataLoader(
         dataset_val, sampler=sampler_test,
@@ -422,8 +431,12 @@ def main(args):
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler) 
 
     if args.eval:
-        test_stats = evaluate(data_loader=data_loader_val, model=model, device=device, args=args,
-        confusion_matrix_plot=args.confusion_matrix_plot, plot_save_name=args.plot_save_name, plot_title=args.plot_title)
+        if args.train_eval:
+            test_stats = evaluate(data_loader=data_loader_train, model=model, device=device, args=args,
+                                  plot_save_name=args.plot_save_name, plot_title=args.plot_title)
+        else:
+            test_stats = evaluate(data_loader=data_loader_val, model=model, device=device, args=args, 
+                                  plot_save_name=args.plot_save_name, plot_title=args.plot_title)
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
         exit(0)
 

@@ -104,7 +104,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, plot_save_name=None, plot_title=None):
+def evaluate(data_loader, model, device, args, plot_save_name=None, plot_title=None):
     criterion = torch.nn.CrossEntropyLoss()
 
     metric_logger = misc.MetricLogger(delimiter="  ")
@@ -152,14 +152,17 @@ def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, plot
         f'loss {metric_logger.meters["loss"].global_avg:.3f} '
         f'F1 {metric_logger.meters["F1"].global_avg:.2f}')
 
-
-    if confusion_matrix_plot:
+    if args.save_predictions:
+        preds_list = list(itertools.chain.from_iterable(preds))
+        preds_tensor = torch.tensor(preds_list)
+        if args.train_eval:
+            torch.save(torch.tensor(preds_tensor), f'/niddk-data-central/mae_hr/rise_moca_4AP_20s_transition/{plot_save_name}_pred_train.pt')
+        else:
+            torch.save(torch.tensor(preds_tensor), f'/niddk-data-central/mae_hr/rise_moca_4AP_20s_transition/{plot_save_name}_pred_test.pt')
+        
+    elif args.confusion_matrix_plot:
         preds_list = list(itertools.chain.from_iterable(preds))
         targets_list = list(itertools.chain.from_iterable(targets))
-
-        if args.save_predictions == True:
-            torch.save(torch.tensor(preds_list), f'{args.data_path}/{plot_save_name}_pred.pt')
-
 
         if args.data == "UCIHAR":
             labels = ['Transition', 'Walking', 'Walking-upstairs', 'Walking-downstairs', 'Sitting', 'Standing', 'Laying']
@@ -180,7 +183,6 @@ def evaluate(data_loader, model, device, args, confusion_matrix_plot=False, plot
 
         final_accordance = (preds_tensor == targets_tensor)
         final_acc1 = final_accordance.sum().item() / len(preds_list)
-
 
 
         # plot confusion matrix
