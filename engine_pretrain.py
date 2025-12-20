@@ -58,7 +58,7 @@ def train_one_epoch(model: torch.nn.Module,
 
         if args.alt: # loss = [loss, loss_mse, loss_nmse]
             with torch.cuda.amp.autocast():
-                loss_all, _, _ = model(samples, mask_ratio=args.mask_ratio, masking_scheme=args.masking_scheme,
+                loss_all, _, _, _ = model(samples, mask_ratio=args.mask_ratio, masking_scheme=args.masking_scheme,
                                         var_mask_ratio=args.var_mask_ratio, time_mask_ratio=args.time_mask_ratio)
             loss = loss_all[0]
             loss_value = loss_all[0].item()
@@ -66,7 +66,7 @@ def train_one_epoch(model: torch.nn.Module,
 
         else:   # loss_all = [[loss, loss_mse, loss_nmse], loss_x_gyr, loss_y_gyr, loss_z_gyr, loss_x_acc, loss_y_acc, loss_z_acc]
             with torch.cuda.amp.autocast():
-                loss_all, _, _ = model(samples, mask_ratio=args.mask_ratio, masking_scheme=args.masking_scheme,
+                loss_all, _, _, _ = model(samples, mask_ratio=args.mask_ratio, masking_scheme=args.masking_scheme,
                                         var_mask_ratio=args.var_mask_ratio, time_mask_ratio=args.time_mask_ratio) #changed
             loss = loss_all[0][0] #changed: changed from loss.item() since now we have list of losses
             loss_value = loss_all[0][0].item() #changed: changed from loss.item() since now we have list of losses
