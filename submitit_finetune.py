@@ -166,5 +166,7 @@ def main():
     if args.wait:
         job.result()
 
+    return True
+
 if __name__ == "__main__":
     main()

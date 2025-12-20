@@ -357,7 +357,7 @@ class RISE(Dataset):
             np.random.seed(seed)
 
         if method is None:
-            augmentation_methods = ["rotation", "mixup", "time_warp"]
+            augmentation_methods = ["mixup", "time_warp"]   #"rotation", 
             aug_random = random.Random(seed) 
             method = aug_random.choice(augmentation_methods)
     

@@ -106,7 +106,7 @@ def mae_reconstruction_pass(x, model, alt, mask_ratio=0.75, norm_pix_loss=False,
 
 
     # load reconstructed y and masks - deconstructed self.forward() to designate masking
-    loss, y, mask = model(x.float(), mask_ratio=mask_ratio, import_mask=import_mask, seed=seed) 
+    loss, y, mask, latent = model(x.float(), mask_ratio=mask_ratio, import_mask=import_mask, seed=seed) 
     #print("y shape:", y.shape, ", mask (1-remove or 0-keep) shape:", mask.shape)
 
     y = model.unpatchify(y)
