@@ -75,6 +75,12 @@ def get_args_parser():
     parser.add_argument('--finetune_interpolate_patches', action='store_true',
                         help='different number of patches in finetune)') # changed - added
     parser.set_defaults(finetune_interpolate_patches=False) # changed - added
+    parser.add_argument('--use_class_weights', action='store_true',
+                        help='Use class weights for imbalanced data')
+    parser.set_defaults(use_class_weights=False) # changed - added    
+    parser.add_argument('--weight_method', type=str, default='inverse_freq',
+                        choices=['inverse_freq', 'normalized', 'sqrt'],
+                        help='Method to calculate class weights')
 
 
     # Optimizer parameters
@@ -188,6 +194,9 @@ def get_args_parser():
     parser.add_argument('--RISE_bin_label', action='store_true',
                         help='collapse label into sed/act/mixed')
     parser.set_defaults(RISE_bin_label=False) 
+    parser.add_argument('--rebalance', action='store_true',
+                        help='downsample for label balance in finetuning')
+    parser.set_defaults(rebalance=False) 
 
     
     # distributed training parameters
@@ -260,12 +269,12 @@ def main(args):
                                 normalization_chan=args.normalization_chan, RISE_hz = args.RISE_hz,
                                 mix_up=False, alt=args.alt,transform=args.transform,
                                 RISE_bin_label=args.RISE_bin_label, use_transition_sub_label=args.use_transition_sub_label,
-                                hz_adjustment = args.hz_adjustment)
+                                hz_adjustment = args.hz_adjustment, rebalance=args.rebalance)
             dataset_val = RISE(data_path=args.data_path, is_test=True, normalization=args.normalization,
                                 normalization_chan=args.normalization_chan, RISE_hz = args.RISE_hz,
                                 mix_up=False, alt=args.alt, transform=args.transform, 
                                 RISE_bin_label=args.RISE_bin_label, use_transition_sub_label=args.use_transition_sub_label,
-                                hz_adjustment = args.hz_adjustment)
+                                hz_adjustment = args.hz_adjustment, rebalance=args.rebalance)
     print("finished data loading")
 
     # input_dim, input_size, in_chans, patch_size sanity check
@@ -424,7 +433,28 @@ def main(args):
     elif args.smoothing > 0.:
         criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
     else:
-        criterion = torch.nn.CrossEntropyLoss()
+        if args.use_class_weights:
+            train_targets = []
+            for _, target in data_loader_train:
+                train_targets.extend(target.numpy())
+            
+            class_counts = np.bincount(train_targets)
+            
+            if args.weight_method == 'inverse_freq':
+                class_weights = len(train_targets) / (len(class_counts) * class_counts)
+            elif args.weight_method == 'normalized':
+                class_weights = 1. / class_counts
+                class_weights = class_weights / class_weights.sum() * len(class_counts)
+            elif args.weight_method == 'sqrt':
+                class_weights = 1. / np.sqrt(class_counts)
+                class_weights = class_weights / class_weights.sum() * len(class_counts)
+            
+            class_weights = torch.FloatTensor(class_weights).to(device)
+            print(f"Using class weights: {class_weights}")
+        else:
+            class_weights = None
+
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
     print("criterion = %s" % str(criterion))
 

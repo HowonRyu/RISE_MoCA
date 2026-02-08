@@ -135,7 +135,8 @@ class UCIHAR(Dataset):
 
 class RISE(Dataset):
     def __init__(self, data_path, alt, is_test=False, normalization_chan=False, use_transition_sub_label = False, RISE_bin_label = False,
-                 normalization=False, transform=False, mix_up=False, RISE_hz = 30, hz_adjustment=False, subject_level_analysis=False, active_aug=False, aug_method=None):
+                 normalization=False, transform=False, mix_up=False, RISE_hz = 30, hz_adjustment=False, subject_level_analysis=False,
+                 active_aug=False, aug_method=None, rebalance=False):
 
         if is_test:
             prefix = "test"
@@ -152,7 +153,7 @@ class RISE(Dataset):
         
         X_train_2 = torch.load(os.path.join(data_path, f"2/X_train.pt"))
         
-        if not subject_level_analysis:
+        if not subject_level_analysis:   
             self.X = torch.empty((total_samples, 1, X_train_2.shape[2], 3), dtype=torch.float32)
         self.y = torch.empty((total_samples, 1), dtype=torch.long)
         self.labels = torch.empty((total_samples, X_train_2.shape[2]))
@@ -163,7 +164,7 @@ class RISE(Dataset):
 
         idx = 0
         for i in range(n_split):
-            print(f"{i}/{n_split} split loading")
+            print(f"{i+1}/{n_split} split loading")
             
             if not subject_level_analysis:
                 X_path = os.path.join(data_path, f"{i}/X_{prefix}.pt")
@@ -182,16 +183,13 @@ class RISE(Dataset):
 
             gc.collect()
             idx += n
-            print(f"{i}/{n_split} split done")
+            print(f"{i+1}/{n_split} split done")
 
         self.y = self.y.squeeze()
         print(f"Data loading all done: # X {prefix} samples = {total_samples}")
 
 
-        # add treatment label features
-
         # exclusion rules according to {0: "sedentary", 1:"standing", 2:"stepping", 3:"cycling", 4:"sleeping", 5:"lying", 6:"seated_transport", -9:"transition"}
-
 
         # Compute indices to exclude
         keep_mask = ~( (self.y == -1) | (self.y == 3) | (self.y == 4) |
@@ -233,16 +231,21 @@ class RISE(Dataset):
             cat2_mapping = torch.tensor([5,6]).long() #cat4_mapping = [5,6,7,8]
             self.y[transition_mask] = cat2_mapping[categories_2] # for now use cat2
             pre_designated_labels = [1, 2, 5, 6]  # for active augmentation
+            label_names = {0: "Sedentary", 1:"Standing", 2:"Stepping", 3:"Lying", 4:"Seated_Transport", 5:"Transition-active", 6:"Transition-mixed"}
+
             if RISE_bin_label:
                 trans_bin_mapping =  torch.tensor([0, 1, 1, 0, 0, 1, 2]).long()
                 self.y = trans_bin_mapping[self.y]
+                label_names = {0:"Non-active", 1: "Active", 2:"Mixed"}
 
         else:
             if RISE_bin_label:
                 bin_mapping =  torch.tensor([0, 1, 1, 0, 0, 1]).long()
                 self.y = bin_mapping[self.y]
+                label_names = {0: "Sedentary", 1:"Standing", 2:"Stepping", 3:"Lying", 4:"Seated_Transport", 5:"Transition"}
             else:
                 pre_designated_labels = [1, 2, 5]
+                label_names = {0:"Non-active", 1: "Active", 2:"Mixed"}
 
 
         print(f"unique y: {np.unique(self.y)}") # sanity check
@@ -261,8 +264,50 @@ class RISE(Dataset):
         if not subject_level_analysis:
             self.X = self.X.permute(0,3,1,2) # conform to (N, 1, H, W) = (N, 1, 3, L)
             
+        # start here
+        if rebalance:
+            # Count per label
+            unique, counts = np.unique(self.y.numpy(), return_counts=True)
+            label_counts = dict(zip(unique, counts))
+            sorted_labels = sorted(label_counts.items(), key=lambda x: x[1])
 
-        if active_aug & (not subject_level_analysis):
+            if RISE_bin_label:
+                target_count = sorted_labels[0][1]
+                target_label = sorted_labels[0][0]
+            else:
+                target_count = sorted_labels[2][1]
+                target_label = sorted_labels[2][0]
+
+            print(f"starting data re-balancing: {target_count} samples per label (following {target_label})")
+            print(f"# samples before rebalancing = {len(self.y)}")
+
+            X_balanced = []
+            y_balanced = []
+
+            for label, count in label_counts.items():
+                label_idx = (self.y == label).nonzero(as_tuple=True)[0]
+
+                if count > target_count:
+                    # Randomly undersample
+                    perm = torch.randperm(len(label_idx))[:target_count]
+                    selected_idx = label_idx[perm]
+                else:
+                    # Keep all samples if already <= target
+                    selected_idx = label_idx
+                
+                if not subject_level_analysis:  
+                    X_balanced.append(self.X[selected_idx])
+                y_balanced.append(self.y[selected_idx])
+
+            # Concatenate balanced data
+            if not subject_level_analysis:  
+                self.X = torch.cat(X_balanced, dim=0)
+            self.y = torch.cat(y_balanced, dim=0)
+
+            print(f"After rebalancing: # X samples = {len(self.y)}")
+
+
+        if active_aug & (not rebalance) & (not subject_level_analysis) & (not RISE_bin_label):   # only use for pre-training
             print(f"starting data augmentation for labels: {pre_designated_labels}")
             print(f"# samples before augmentation = {len(self.X)}")
             self.augmented_methods = []
@@ -273,10 +318,10 @@ class RISE(Dataset):
             label_counts = dict(zip(unique, counts))
             max_count = max(counts)
 
-            print(f"# augmenting labels to {target_ratio} of max label {np.argmax(counts)} ({max_count})")
+            print(f"augmenting labels to {target_ratio} of max label {np.argmax(counts)} ({max_count})")
 
             X_aug_list = []
-            y_aug_list = []
+            y_aug_list = [] # y only here as placeholder, not accurate (will not be used in pre-training)
 
             for label in pre_designated_labels:
                 current_count = label_counts.get(label, 0)
@@ -291,7 +336,7 @@ class RISE(Dataset):
                     X_aug, method = self.augment_tensor(X_sample, seed=(i+10), method=aug_method)
                     
                     X_aug_list.append(X_aug.unsqueeze(0))
-                    y_aug_list.append(self.y[idx_sample].unsqueeze(0))
+                    y_aug_list.append(self.y[idx_sample].unsqueeze(0)) # y only here as placeholder, not accurate (will not be used in pre-training)
                     self.augmented_methods.append(method)
 
             if len(X_aug_list) > 0:

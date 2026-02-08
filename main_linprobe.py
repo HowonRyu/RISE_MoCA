@@ -156,7 +156,9 @@ def get_args_parser():
     parser.add_argument('--RISE_bin_label', action='store_true',
                         help='collapse label into sed/act/mixed')
     parser.set_defaults(RISE_bin_label=False) 
-
+    parser.add_argument('--rebalance', action='store_true',
+                        help='downsample for label balance in finetuning')
+    parser.set_defaults(rebalance=False) 
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
@@ -225,11 +227,11 @@ def main(args):
             dataset_train = RISE(data_path=args.data_path, is_test=False, normalization=args.normalization,
                                  RISE_bin_label=args.RISE_bin_label, use_transition_sub_label=args.use_transition_sub_label,
                                 normalization_chan=args.normalization_chan, RISE_hz = args.RISE_hz,
-                                mix_up=False, alt=args.alt,transform=args.transform, hz_adjustment = args.hz_adjustment)
+                                mix_up=False, alt=args.alt,transform=args.transform, hz_adjustment = args.hz_adjustment, rebalance=args.rebalance)
             dataset_val = RISE(data_path=args.data_path, is_test=True, normalization=args.normalization,
                                RISE_bin_label=args.RISE_bin_label, use_transition_sub_label=args.use_transition_sub_label,
                                 normalization_chan=args.normalization_chan, RISE_hz = args.RISE_hz,
-                                mix_up=False, alt=args.alt, transform=args.transform, hz_adjustment = args.hz_adjustment)
+                                mix_up=False, alt=args.alt, transform=args.transform, hz_adjustment = args.hz_adjustment, rebalance=args.rebalance)
     print("finished data loading")
 
 

@@ -192,7 +192,7 @@ def main(args):
         if args.data == "RISE":
             dataset_train = RISE(data_path=args.data_path, is_test=False, normalization=args.normalization,
                                 normalization_chan=args.normalization_chan, RISE_hz = args.RISE_hz,  active_aug=args.active_aug, aug_method=args.aug_method,
-                                mix_up=False, alt=args.alt,transform=args.transform, hz_adjustment = args.hz_adjustment)
+                                mix_up=False, alt=args.alt,transform=args.transform, hz_adjustment = args.hz_adjustment, RISE_bin_label=False)
     print("finished data loading")
 
 
