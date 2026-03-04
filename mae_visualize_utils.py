@@ -509,4 +509,150 @@ def mae_classification_pass(dataset, model, batch_size=100, device='cuda', num_w
 
 
 
+## Attention plot function
+def attention_plot(which_true_label, which_pred_label, which_sample, dataset, model_mae_classifier,
+                   preds_list, device, save_plot=False, font_size_main=12, save_dir='/niddk-data-central/mae_hr/RISE_PH/plots/attn'):
+    
+    # select sample
+    label_indices = np.where(
+        (np.array(dataset.y) == which_true_label) &
+        (np.array(preds_list) == which_pred_label)
+    )[0]
+    sample_idx       = label_indices[which_sample]
+    sample_x         = dataset[sample_idx][0].unsqueeze(0).to(device)
+    sample_y         = dataset[sample_idx][1].item()
+    sample_ap_labels = dataset.labels[sample_idx]
+    ap_labels_unique = np.unique(sample_ap_labels)
 
+    with torch.no_grad():
+        output = model_mae_classifier(sample_x)
+        pred   = output.argmax(dim=1).item()
+
+    # initialization for plots
+    lab_to_name  = {0: "Sedentary", 1: "Standing", 2: "Stepping", 3: "Lying",
+                    4: "Seated Transport", 5: "Transition-active", 6: "Transition-mixed"}
+    cmap_attn    = mcolors.LinearSegmentedColormap.from_list('white_brown', ['white', 'orange'])
+    axis_col     = ['blue', 'darkred', 'green']
+    axis_names   = ['X', 'Y', 'Z']
+    activity_labels_ap_org = {0.0: "sedentary", 0.1: "standing", 0.2: "stepping",
+                               0.3: "lying",     0.4: "seated_transport"}
+
+    print(f"Sample index: {sample_idx}, "
+          f"Label: {lab_to_name[sample_y]}, "
+          f"Pred: {lab_to_name[pred]}, "
+          f"AP org labels: {[lab_to_name[lab] for lab in ap_labels_unique]}")
+
+    # extract attention
+    attention_maps = {}
+
+    def get_attention_hook(layer_idx):
+        def hook(module, input, output):
+            B, N, C  = input[0].shape
+            qkv      = module.qkv(input[0]).reshape(
+                            B, N, 3, module.num_heads, C // module.num_heads
+                        ).permute(2, 0, 3, 1, 4)
+            q, k, _  = qkv.unbind(0)
+            scale    = (C // module.num_heads) ** -0.5
+            attn     = (q @ k.transpose(-2, -1)) * scale
+            attn     = attn.softmax(dim=-1)
+            attention_maps[layer_idx] = attn.detach().cpu()
+        return hook
+
+    handles = []
+    for idx, block in enumerate(model_mae_classifier.blocks):
+        handles.append(block.attn.register_forward_hook(get_attention_hook(idx)))
+
+    with torch.no_grad():
+        model_mae_classifier.forward_features(sample_x)
+
+    for handle in handles:
+        handle.remove()
+
+    n_layers  = len(attention_maps)
+    n_heads   = attention_maps[0].shape[1]
+    n_patches = attention_maps[0].shape[-1] - 1
+    print(f"Layers: {n_layers}, Heads: {n_heads}, Patches: {n_patches}")
+
+    # aggregate attention
+    cls_attn_per_layer = np.zeros((n_layers, n_patches))
+    for layer_idx in range(n_layers):
+        attn = attention_maps[layer_idx][0]
+        cls_attn_per_layer[layer_idx] = attn[:, 0, 1:].mean(dim=0).numpy()
+
+    mean_cls_attn_all_layers = cls_attn_per_layer.mean(axis=0)
+    mean_cls_attn_last_layer = cls_attn_per_layer[-1]
+
+    print(f"Attention score range (all layers mean): "
+          f"[{mean_cls_attn_all_layers.min():.4f}, {mean_cls_attn_all_layers.max():.4f}]")
+    print(f"Attention score range (last layer):      "
+          f"[{mean_cls_attn_last_layer.min():.4f}, {mean_cls_attn_last_layer.max():.4f}]")
+
+    raw_signal      = sample_x[0, 0].cpu().numpy()
+    time_steps      = raw_signal.shape[-1]
+    patch_size_time = time_steps // n_patches
+
+
+    #### PLOTS
+    fig = plt.figure(figsize=(14, 6))
+    gs  = gridspec.GridSpec(
+        2, 2,
+        height_ratios=[4, 1],
+        width_ratios=[20, 1],
+        hspace=0.05,
+        wspace=0.05
+    )
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax2 = fig.add_subplot(gs[1, 0])
+    cax = fig.add_subplot(gs[0, 1])
+
+    # attention score background
+    for i, score in enumerate(mean_cls_attn_last_layer):
+        start = i * patch_size_time
+        end   = start + patch_size_time
+        color = cmap_attn(score / mean_cls_attn_last_layer.max())
+        ax1.axvspan(start, end, color=color, alpha=0.8, zorder=0)
+
+    # raw signal
+    for ch in range(raw_signal.shape[0]):
+        ax1.plot(raw_signal[ch], color=axis_col[ch], linewidth=1,
+                 label=f'Accelerometer {axis_names[ch]}', zorder=2)
+    #  patch lines
+    for i in range(1, n_patches):
+        ax1.axvline(x=i * patch_size_time, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
+
+    # colorbar/labels
+    sm = plt.cm.ScalarMappable(
+        cmap=cmap_attn,
+        norm=plt.Normalize(vmin=0, vmax=mean_cls_attn_last_layer.max())
+    )
+    sm.set_array([])
+    cbar = plt.colorbar(sm, cax=cax)
+    cbar.set_label('Attention Score', color='black')
+    cbar.ax.yaxis.set_tick_params(color='black')
+    plt.setp(cbar.ax.yaxis.get_ticklabels(), color='black')
+
+    ax1.set_ylabel('Signal Amplitude', fontsize=font_size_main)
+    ax1.legend(loc='upper right', fontsize=font_size_main)
+    ax1.set_title(
+        f'Raw signal and attention score — {lab_to_name[sample_y]} predicted as {lab_to_name[pred]}',
+        color='black', fontsize=font_size_main + 3
+    )
+    ax1.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+
+    # AP label subplot
+    ax2.plot(sample_ap_labels / 10, color='black', linewidth=1,
+             label='AP Original Label', zorder=2)
+
+    for i in range(1, n_patches):
+        ax2.axvline(x=i * patch_size_time, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
+
+    ax2.set_yticks(list(activity_labels_ap_org.keys()))
+    ax2.set_yticklabels(list(activity_labels_ap_org.values()), fontsize=font_size_main)
+    ax2.set_xlabel('Data Points', fontsize=font_size_main)
+    ax2.set_ylabel('AP Label', fontsize=font_size_main)
+    ax2.legend(loc='upper right', fontsize=font_size_main)
+
+    if save_plot:
+        save_path = f'{save_dir}/attn_score_t{which_true_label}_p{which_pred_label}_#{which_sample}.png'
+        plt.savefig(save_path, dpi=500, bbox_inches='tight')
+    plt.show()
