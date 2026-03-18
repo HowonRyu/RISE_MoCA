@@ -22,7 +22,7 @@ from timm.utils import accuracy
 import matplotlib.pyplot as plt
 import util.misc as misc
 import util.lr_sched as lr_sched
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, balanced_accuracy_score
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
@@ -144,13 +144,18 @@ def evaluate(data_loader, model, device, args, plot_save_name=None, plot_title=N
         metric_logger.meters['acc2'].update(acc2.item(), n=batch_size)
 
     
+    # balanced accuracy
+    all_preds   = [p for batch in preds   for p in batch]
+    all_targets = [t for batch in targets for t in batch]
+    global_bal_acc = balanced_accuracy_score(all_targets, all_preds)
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print(f'* Acc@1 {metric_logger.meters["acc1"].global_avg:.4f} '
         f'Acc@2 {metric_logger.meters["acc2"].global_avg:.3f} '
         f'loss {metric_logger.meters["loss"].global_avg:.3f} '
-        f'F1 {metric_logger.meters["F1"].global_avg:.2f}')
+        f'F1 {metric_logger.meters["F1"].global_avg:.2f}'
+        f'Balanced accuracy {global_bal_acc:.4f}')
 
     if args.save_predictions:
         preds_list = list(itertools.chain.from_iterable(preds))

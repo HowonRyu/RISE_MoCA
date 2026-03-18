@@ -16,6 +16,7 @@ import pandas as pd
 import os
 import time
 from pathlib import Path
+import matplotlib.pyplot as plt
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -242,6 +243,13 @@ def main(args):
         pin_memory=args.pin_mem,
         drop_last=True,
     )
+
+    #save augmentation
+    plt.hist(dataset_train.y, bins=np.arange(8) - 0.5, edgecolor='black', density=False)
+    plt.title('New augmentation (pretrain) label distribution')
+    plt.savefig('/niddk-data-central/mae_hr/RISE_PH/plots/label_distribution_augn.png', dpi=300, bbox_inches='tight')
+    plt.show()
+    print("Done producing the new augmentation label distribution plot")
     
     # define the model
     model = models_mae.__dict__[args.model](img_size=args.input_size, patch_size=args.patch_size, in_chans=args.in_chans, # changed - to reflect input_size change

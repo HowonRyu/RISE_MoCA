@@ -1,6 +1,7 @@
 import torch
 import numpy as np
-
+import matplotlib.colors as mcolors
+import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import itertools
 import torch.nn as nn
@@ -18,12 +19,12 @@ from util.datasets import *
 
 
 def load_dataset(data_path, data = "RISE", test_data=True, RISE_hz=30, alt=True, normalization=False,
-                 transform=False, use_transition_sub_label=False, RISE_bin_label=False):
+                 transform=False, active_aug=False, use_transition_sub_label=False, RISE_bin_label=False):
 
     if data == "RISE":
         dataset = RISE(data_path=data_path, is_test=test_data, normalization=normalization,
                     normalization_chan=False, RISE_hz=RISE_hz, mix_up=False, alt=alt, transform=transform,
-                    use_transition_sub_label=use_transition_sub_label, RISE_bin_label=RISE_bin_label)
+                    use_transition_sub_label=use_transition_sub_label, RISE_bin_label=RISE_bin_label, active_aug = active_aug)
         labels = ["sedentary", "standing", "stepping", "sleeping", "secondary_lying", "seated_transport"]
 
         if use_transition_sub_label:
