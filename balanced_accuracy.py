@@ -22,7 +22,6 @@ from sklearn.metrics import balanced_accuracy_score
 
 def get_balanced_accuracy(dataset, model_nickname, nb_classes, finetuned_checkpoint_path, device, input_size=[3, 600], patch_size=[1, 60], in_chans=1):
 
-    #finetuned_checkpoint_path = "/niddk-data-central/mae_hr/RISE_PH/RISE_MoCA/experiments/Final_RISE_FT_20s_augp/123(RISE_FT_20s_augp_trans)/checkpoint-5.pth"
     model_mae_classifier = load_model_ft(
         checkpoint_path=finetuned_checkpoint_path, LP=False, nb_classes=nb_classes, in_chans=in_chans,
         input_size=input_size, patch_size=patch_size, finetune_interpolate_patches=False,
