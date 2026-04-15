@@ -510,7 +510,6 @@ def mae_classification_pass(dataset, model, batch_size=100, device='cuda', num_w
 
 
 
-## Attention plot function
 def attention_plot(which_true_label, which_pred_label, which_sample, dataset, model_mae_classifier,
                    preds_list, device, save_plot=False, font_size_main=12, save_dir='/niddk-data-central/mae_hr/RISE_PH/plots/attn'):
     
@@ -529,21 +528,21 @@ def attention_plot(which_true_label, which_pred_label, which_sample, dataset, mo
         output = model_mae_classifier(sample_x)
         pred   = output.argmax(dim=1).item()
 
-    # initialization for plots
+    # initialization
     lab_to_name  = {0: "Sedentary", 1: "Standing", 2: "Stepping", 3: "Lying",
                     4: "Seated Transport", 5: "Transition-active", 6: "Transition-mixed"}
     cmap_attn    = mcolors.LinearSegmentedColormap.from_list('white_brown', ['white', 'orange'])
     axis_col     = ['blue', 'darkred', 'green']
     axis_names   = ['X', 'Y', 'Z']
-    activity_labels_ap_org = {0.0: "sedentary", 0.1: "standing", 0.2: "stepping",
-                               0.3: "lying",     0.4: "seated_transport"}
+    activity_labels_ap_org = {0.0: "Sedentary", 0.1: "Standing", 0.2: "Stepping",
+                               0.3: "Lying",     0.4: "Seated Transport"}
 
     print(f"Sample index: {sample_idx}, "
           f"Label: {lab_to_name[sample_y]}, "
           f"Pred: {lab_to_name[pred]}, "
           f"AP org labels: {[lab_to_name[lab] for lab in ap_labels_unique]}")
 
-    # extract attention
+    # extract attention (same hook logic as before)
     attention_maps = {}
 
     def get_attention_hook(layer_idx):
@@ -571,87 +570,127 @@ def attention_plot(which_true_label, which_pred_label, which_sample, dataset, mo
 
     n_layers  = len(attention_maps)
     n_heads   = attention_maps[0].shape[1]
-    n_patches = attention_maps[0].shape[-1] - 1
+    n_patches = attention_maps[0].shape[-1] - 1  # 30 total patches
     print(f"Layers: {n_layers}, Heads: {n_heads}, Patches: {n_patches}")
 
-    # aggregate attention
+    # aggregate attention across last layer (30 patches total)
     cls_attn_per_layer = np.zeros((n_layers, n_patches))
     for layer_idx in range(n_layers):
         attn = attention_maps[layer_idx][0]
         cls_attn_per_layer[layer_idx] = attn[:, 0, 1:].mean(dim=0).numpy()
 
-    mean_cls_attn_all_layers = cls_attn_per_layer.mean(axis=0)
-    mean_cls_attn_last_layer = cls_attn_per_layer[-1]
+    last_layer_attn = cls_attn_per_layer[-1]  # shape: (30,)
 
-    print(f"Attention score range (all layers mean): "
-          f"[{mean_cls_attn_all_layers.min():.4f}, {mean_cls_attn_all_layers.max():.4f}]")
-    print(f"Attention score range (last layer):      "
-          f"[{mean_cls_attn_last_layer.min():.4f}, {mean_cls_attn_last_layer.max():.4f}]")
 
-    raw_signal      = sample_x[0, 0].cpu().numpy()
+    n_patches_per_axis = n_patches // 3  # 10
+    axis_attn = {
+        0: last_layer_attn[0:n_patches_per_axis],                        # X
+        1: last_layer_attn[n_patches_per_axis:2*n_patches_per_axis],     # Y
+        2: last_layer_attn[2*n_patches_per_axis:3*n_patches_per_axis],   # Z
+    }
+    avg_attn = np.mean([axis_attn[i] for i in range(3)], axis=0)  # element-wise mean across axes
+
+    raw_signal      = sample_x[0, 0].cpu().numpy()  # shape: (3, time_steps)
     time_steps      = raw_signal.shape[-1]
-    patch_size_time = time_steps // n_patches
+    patch_size_time = time_steps // n_patches_per_axis  # each axis patch spans this many time steps
 
+    print(f"Patch size (time steps): {patch_size_time}")
+    print(f"Attention score range (last layer): [{last_layer_attn.min():.4f}, {last_layer_attn.max():.4f}]")
 
-    #### PLOTS
-    fig = plt.figure(figsize=(14, 6))
+    # global attention max for consistent colormap scaling
+    attn_global_max = last_layer_attn.max()
+
+    #### PLOTS — 5 rows
+    fig = plt.figure(figsize=(14, 10))
     gs  = gridspec.GridSpec(
-        2, 2,
-        height_ratios=[4, 1],
+        5, 2,
+        height_ratios=[1.5, 1.5, 1.5, 3, 1.5],
         width_ratios=[20, 1],
-        hspace=0.05,
+        hspace=0.08,
         wspace=0.05
     )
-    ax1 = fig.add_subplot(gs[0, 0])
-    ax2 = fig.add_subplot(gs[1, 0])
-    cax = fig.add_subplot(gs[0, 1])
 
-    # attention score background
-    for i, score in enumerate(mean_cls_attn_last_layer):
+    axes_signal = [fig.add_subplot(gs[i, 0]) for i in range(4)]
+    ax_label    = fig.add_subplot(gs[4, 0])
+    cax         = fig.add_subplot(gs[0:4, 1])  # shared colorbar spanning rows 0-3
+
+    # Row1-3
+    for ch in range(3):
+        ax = axes_signal[ch]
+        attn_scores = axis_attn[ch]
+
+        # attention background (10 patches, each covers full time_steps span)
+        for i, score in enumerate(attn_scores):
+            start = i * patch_size_time
+            end   = start + patch_size_time
+            color = cmap_attn(score / attn_global_max)
+            ax.axvspan(start, end, color=color, alpha=0.8, zorder=0)
+
+        # raw signal for this axis
+        ax.plot(raw_signal[ch], color=axis_col[ch], linewidth=1,
+                label=f'Accelerometer {axis_names[ch]}', zorder=2)
+
+        # patch boundary lines
+        for i in range(1, n_patches_per_axis):
+            ax.axvline(x=i * patch_size_time, color='gray', linestyle='--',
+                       linewidth=0.5, alpha=0.5)
+
+        ax.set_ylabel('', fontsize=font_size_main)
+        ax.legend(loc='upper right', fontsize=font_size_main)
+        ax.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+
+        if ch == 0:
+            ax.set_title(
+                f'Raw signal and attention score — {lab_to_name[sample_y]} predicted as {lab_to_name[pred]}',
+                color='black', fontsize=font_size_main + 3
+            )
+
+    # Row4
+    ax_avg = axes_signal[3]
+
+    # averaged attention score across axes
+    for i, score in enumerate(avg_attn):
         start = i * patch_size_time
         end   = start + patch_size_time
-        color = cmap_attn(score / mean_cls_attn_last_layer.max())
-        ax1.axvspan(start, end, color=color, alpha=0.8, zorder=0)
+        color = cmap_attn(score / attn_global_max)
+        ax_avg.axvspan(start, end, color=color, alpha=0.8, zorder=0)
 
-    # raw signal
-    for ch in range(raw_signal.shape[0]):
-        ax1.plot(raw_signal[ch], color=axis_col[ch], linewidth=1,
-                 label=f'Accelerometer {axis_names[ch]}', zorder=2)
-    #  patch lines
-    for i in range(1, n_patches):
-        ax1.axvline(x=i * patch_size_time, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
 
-    # colorbar/labels
+    for ch in range(3):
+        ax_avg.plot(raw_signal[ch], color=axis_col[ch], linewidth=1,
+                    label=f'Accelerometer {axis_names[ch]}', zorder=2)
+    for i in range(1, n_patches_per_axis):
+        ax_avg.axvline(x=i * patch_size_time, color='gray', linestyle='--',
+                       linewidth=0.5, alpha=0.5)
+
+    ax_avg.set_ylabel('', fontsize=font_size_main)
+    ax_avg.legend(loc='upper right', fontsize=font_size_main, ncol=3)
+    ax_avg.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+
+    # Row5
+    ax_label.plot(sample_ap_labels / 10, color='black', linewidth=1,
+                  label='AP Original Label', zorder=2)
+
+    for i in range(1, n_patches_per_axis):
+        ax_label.axvline(x=i * patch_size_time, color='gray', linestyle='--',
+                         linewidth=0.5, alpha=0.5)
+
+    ax_label.set_yticks(list(activity_labels_ap_org.keys()))
+    ax_label.set_yticklabels(list(activity_labels_ap_org.values()), fontsize=font_size_main)
+    ax_label.set_xlabel('Data Points', fontsize=font_size_main)
+    ax_label.set_ylabel('AP Label', fontsize=font_size_main)
+    ax_label.legend(loc='upper right', fontsize=font_size_main)
+
+    # colorbar
     sm = plt.cm.ScalarMappable(
         cmap=cmap_attn,
-        norm=plt.Normalize(vmin=0, vmax=mean_cls_attn_last_layer.max())
+        norm=plt.Normalize(vmin=0, vmax=attn_global_max)
     )
     sm.set_array([])
     cbar = plt.colorbar(sm, cax=cax)
     cbar.set_label('Attention Score', color='black')
     cbar.ax.yaxis.set_tick_params(color='black')
     plt.setp(cbar.ax.yaxis.get_ticklabels(), color='black')
-
-    ax1.set_ylabel('Signal Amplitude', fontsize=font_size_main)
-    ax1.legend(loc='upper right', fontsize=font_size_main)
-    ax1.set_title(
-        f'Raw signal and attention score — {lab_to_name[sample_y]} predicted as {lab_to_name[pred]}',
-        color='black', fontsize=font_size_main + 3
-    )
-    ax1.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
-
-    # AP label subplot
-    ax2.plot(sample_ap_labels / 10, color='black', linewidth=1,
-             label='AP Original Label', zorder=2)
-
-    for i in range(1, n_patches):
-        ax2.axvline(x=i * patch_size_time, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
-
-    ax2.set_yticks(list(activity_labels_ap_org.keys()))
-    ax2.set_yticklabels(list(activity_labels_ap_org.values()), fontsize=font_size_main)
-    ax2.set_xlabel('Data Points', fontsize=font_size_main)
-    ax2.set_ylabel('AP Label', fontsize=font_size_main)
-    ax2.legend(loc='upper right', fontsize=font_size_main)
 
     if save_plot:
         save_path = f'{save_dir}/attn_score_t{which_true_label}_p{which_pred_label}_#{which_sample}.png'

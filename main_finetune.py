@@ -197,6 +197,11 @@ def get_args_parser():
     parser.add_argument('--rebalance', action='store_true',
                         help='downsample for label balance in finetuning')
     parser.set_defaults(rebalance=False) 
+    parser.add_argument('--cleanlab_indices_path', type=str, default=None,
+                        help='path for cleanlab indices for filtering')
+    parser.set_defaults(cleanlab_indices=False) 
+
+
 
     
     # distributed training parameters
@@ -269,12 +274,14 @@ def main(args):
                                 normalization_chan=args.normalization_chan, RISE_hz = args.RISE_hz,
                                 mix_up=False, alt=args.alt,transform=args.transform,
                                 RISE_bin_label=args.RISE_bin_label, use_transition_sub_label=args.use_transition_sub_label,
-                                hz_adjustment = args.hz_adjustment, rebalance=args.rebalance)
+                                hz_adjustment = args.hz_adjustment, rebalance=args.rebalance,
+                                cleanlab_indices_path=args.cleanlab_indices_path)
             dataset_val = RISE(data_path=args.data_path, is_test=True, normalization=args.normalization,
                                 normalization_chan=args.normalization_chan, RISE_hz = args.RISE_hz,
                                 mix_up=False, alt=args.alt, transform=args.transform, 
                                 RISE_bin_label=args.RISE_bin_label, use_transition_sub_label=args.use_transition_sub_label,
-                                hz_adjustment = args.hz_adjustment, rebalance=args.rebalance)
+                                hz_adjustment = args.hz_adjustment, rebalance=args.rebalance,
+                                cleanlab_indices_path=args.cleanlab_indices_path)
     print("finished data loading")
 
     # input_dim, input_size, in_chans, patch_size sanity check

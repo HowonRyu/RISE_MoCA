@@ -136,7 +136,7 @@ class UCIHAR(Dataset):
 class RISE(Dataset):
     def __init__(self, data_path, alt, is_test=False, normalization_chan=False, use_transition_sub_label = False, RISE_bin_label = False,
                  normalization=False, transform=False, mix_up=False, RISE_hz = 30, hz_adjustment=False, subject_level_analysis=False,
-                 active_aug=False, aug_method=None, rebalance=False, cleanlab_indices_path=None):
+                 active_aug=False, aug_method=None, rebalance=False):
 
         if is_test:
             prefix = "test"
@@ -229,7 +229,7 @@ class RISE(Dataset):
              
             cat2_mapping = torch.tensor([5,6]).long() #cat4_mapping = [5,6,7,8]
             self.y[transition_mask] = cat2_mapping[categories_2] # for now use cat2
-            pre_designated_labels = [1, 2, 5, 6]  # for active augmentation
+            active_aug_labels = [1, 2]  # for active augmentation [1, 2, 5, 6]
             label_names = {0: "Sedentary", 1:"Standing", 2:"Stepping", 3:"Lying", 4:"Seated_Transport", 5:"Transition-active", 6:"Transition-mixed"}
 
             if RISE_bin_label:
@@ -243,7 +243,7 @@ class RISE(Dataset):
                 self.y = bin_mapping[self.y]
                 label_names = {0: "Sedentary", 1:"Standing", 2:"Stepping", 3:"Lying", 4:"Seated_Transport", 5:"Transition"}
             else:
-                pre_designated_labels = [1, 2, 5]
+                active_aug_labels = [1, 2]
                 label_names = {0:"Non-active", 1: "Active", 2:"Mixed"}
 
 
@@ -307,10 +307,10 @@ class RISE(Dataset):
 
 
         if active_aug & (not rebalance) & (not subject_level_analysis) & (not RISE_bin_label):   # only use for pre-training
-            print(f"starting data augmentation for labels: {pre_designated_labels}")
+            print(f"starting data augmentation for labels: {active_aug_labels}")
             print(f"# samples before augmentation = {len(self.X)}")
             self.augmented_methods = []
-            target_ratio = 0.5  
+            target_ratio = 1
             
             # Count per label
             unique, counts = np.unique(self.y.numpy(), return_counts=True)
@@ -322,20 +322,30 @@ class RISE(Dataset):
             X_aug_list = []
             y_aug_list = [] # y only here as placeholder, not accurate (will not be used in pre-training)
 
-            for label in pre_designated_labels:
+            active_label_idx = ((self.y == 1) | (self.y == 2)).nonzero(as_tuple=True)[0]
+            non_active_label_idx = ((self.y == 0) | (self.y == 3) | (self.y == 4)).nonzero(as_tuple=True)[0]
+            
+            for label in active_aug_labels:
                 current_count = label_counts.get(label, 0)
                 n_to_generate = int(max_count * target_ratio - current_count)
                 print(f"n_to_generate for label {label}= {n_to_generate}")
                 label_idx = (self.y == label).nonzero(as_tuple=True)[0]
+
+                if (label == 6):
+                    aug_method = "time_warp"
+                else:
+                    aug_method = None
                 
                 for i in range(n_to_generate):
                     idx_sample = label_idx[i % len(label_idx)]
                     X_sample = self.X[idx_sample]
-                    
-                    X_aug, method = self.augment_tensor(X_sample, seed=(i+10), method=aug_method)
+                    y_sample = self.y[idx_sample]
+                    X_aug, method, y_aug = self.augment_tensor(X = X_sample, y = y_sample,
+                                                               active_label_idx = active_label_idx, non_active_label_idx = non_active_label_idx,
+                                                               seed=(i+10), method=aug_method)
                     
                     X_aug_list.append(X_aug.unsqueeze(0))
-                    y_aug_list.append(self.y[idx_sample].unsqueeze(0)) # y only here as placeholder, not accurate (will not be used in pre-training)
+                    y_aug_list.append(y_aug.unsqueeze(0)) # y only here as placeholder, not accurate (will not be used in pre-training)
                     self.augmented_methods.append(method)
 
             if len(X_aug_list) > 0:
@@ -344,17 +354,6 @@ class RISE(Dataset):
 
             print(f"After stochastic augmentation: # X samples = {self.X.shape[0]}")
 
-        if cleanlab_indices_path:
-            cleanlab_indices = torch.load(cleanlab_indices_path)
-            self.X = self.X[cleanlab_indices]
-            self.y = self.y[cleanlab_indices] 
-            self.labels = self.labels[cleanlab_indices]
-            self.time = self.time[cleanlab_indices]
-            self.visit = self.visit[cleanlab_indices]
-            self.id = self.id[cleanlab_indices]
-            self.sleeping = self.sleeping[cleanlab_indices]
-            print(f"After cleanlab filtering: # X samples = {self.X.shape[0]}")
-            print(f"After cleanlab filtering: # labels samples = {len(self.labels)}")
 
 
         self.normalization = normalization
@@ -406,13 +405,13 @@ class RISE(Dataset):
 
         return result
 
-    def augment_tensor(self, X, seed=None, method=None):
+    def augment_tensor(self, X, y, active_label_idx=None, non_active_label_idx=None, seed=None, method=None):
         if seed is not None:
             torch.manual_seed(seed)
             np.random.seed(seed)
 
         if method is None:
-            augmentation_methods = ["mixup", "time_warp"]   #"rotation", 
+            augmentation_methods = ["mixup_mixed", "time_warp"]   #"rotation", 
             aug_random = random.Random(seed) 
             method = aug_random.choice(augmentation_methods)
     
@@ -426,8 +425,10 @@ class RISE(Dataset):
             X_aug = X_aug[:, perm, :]
             method_0 = 0
 
-        elif method == "mixup":     
-            mix_idx = torch.randint(0, len(self.X), (1,)).item()
+
+        elif method == "mixup_active":    
+            mixup_random = random.Random(seed+2029) 
+            mix_idx = mixup_random.choice(active_label_idx)
             sample_X2 = self.X[mix_idx]
             
             lambada = torch.distributions.Uniform(0, 0.5).sample().item()
@@ -437,6 +438,22 @@ class RISE(Dataset):
             chunk2 = sample_X2[:, :, sample1_size:]  
             X_aug = torch.cat((chunk1, chunk2), dim=2)
             method_0 = 1
+            y = torch.tensor(5, dtype=torch.long)
+
+
+        elif method == "mixup_mixed":    
+            mixup_random = random.Random(seed+2009) 
+            mix_idx = mixup_random.choice(non_active_label_idx)
+            sample_X2 = self.X[mix_idx]
+            
+            lambada = torch.distributions.Uniform(0, 0.5).sample().item()
+            sample1_size = int(L * lambada)
+
+            chunk1 = X[:, :, :sample1_size]  
+            chunk2 = sample_X2[:, :, sample1_size:]  
+            X_aug = torch.cat((chunk1, chunk2), dim=2)
+            method_0 = 1
+            y = torch.tensor(6, dtype=torch.long)
 
         elif method == "time_warp":
             scale = np.random.uniform(0.7, 1.3)
@@ -452,7 +469,7 @@ class RISE(Dataset):
         else:
             raise ValueError(f"Unknown augmentation method: {method}")
 
-        return X_aug, method_0
+        return X_aug, method_0, y
 
     def classify_sequences(self, x):
         N = x.shape[0]

@@ -161,10 +161,12 @@ def evaluate(data_loader, model, device, args, plot_save_name=None, plot_title=N
         preds_list = list(itertools.chain.from_iterable(preds))
         preds_tensor = torch.tensor(preds_list)
         if args.train_eval:
-            torch.save(torch.tensor(preds_tensor), f'/niddk-data-central/mae_hr/rise_moca_4AP_20s_transition/{plot_save_name}_pred_train.pt')
+            save_path_train = os.path.join(args.data_path, f'{plot_save_name}_pred_train.pt')
+            save_path_test = os.path.join(args.data_path, f'{plot_save_name}_pred_test.pt')
+            torch.save(torch.tensor(preds_tensor), save_path_train)
         else:
-            torch.save(torch.tensor(preds_tensor), f'/niddk-data-central/mae_hr/rise_moca_4AP_20s_transition/{plot_save_name}_pred_test.pt')
-        
+            torch.save(torch.tensor(preds_tensor), save_path_test)
+
     elif args.confusion_matrix_plot:
         preds_list = list(itertools.chain.from_iterable(preds))
         targets_list = list(itertools.chain.from_iterable(targets))
