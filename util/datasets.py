@@ -136,7 +136,7 @@ class UCIHAR(Dataset):
 class RISE(Dataset):
     def __init__(self, data_path, alt, is_test=False, normalization_chan=False, use_transition_sub_label = False, RISE_bin_label = False,
                  normalization=False, transform=False, mix_up=False, RISE_hz = 30, hz_adjustment=False, subject_level_analysis=False,
-                 active_aug=False, aug_method=None, rebalance=False, cleanlab_indices_path=None):
+                 active_aug=False, aug_method=None, rebalance=False, cleanlab_filter=None):
 
         if is_test:
             prefix = "test"
@@ -344,10 +344,17 @@ class RISE(Dataset):
 
             print(f"After stochastic augmentation: # X samples = {self.X.shape[0]}")
 
-        if cleanlab_indices_path:
-            cleanlab_indices = torch.load(cleanlab_indices_path)
+        if cleanlab_filter:
+            if RISE_bin_label:
+                cleanlab_indices_df = pd.read_csv(os.path.join(data_path, "cleanlab_flagged_bin.csv"))
+            else:
+                cleanlab_indices_df = pd.read_csv(os.path.join(data_path, "cleanlab_flagged.csv"))
+            cleanlab_indices = torch.tensor(cleanlab_indices_df["index"].values, dtype=torch.long)
+            all_indices = torch.arange(self.X.shape[0])
+            mask = ~torch.isin(all_indices, cleanlab_indices)
+            cleanlab_indices = all_indices[mask]
             self.X = self.X[cleanlab_indices]
-            self.y = self.y[cleanlab_indices] 
+            self.y = self.y[cleanlab_indices]
             self.labels = self.labels[cleanlab_indices]
             self.time = self.time[cleanlab_indices]
             self.visit = self.visit[cleanlab_indices]
@@ -355,6 +362,15 @@ class RISE(Dataset):
             self.sleeping = self.sleeping[cleanlab_indices]
             print(f"After cleanlab filtering: # X samples = {self.X.shape[0]}")
             print(f"After cleanlab filtering: # labels samples = {len(self.labels)}")
+            
+            # export bar plot
+            import matplotlib.pyplot as plt
+            unique, counts = np.unique(self.y.numpy(), return_counts=True)
+            plt.bar(unique, counts)
+            plt.xlabel("Labels")
+            plt.ylabel("Counts")
+            plt.title("Label Distribution After Cleanlab Filtering")
+            plt.savefig(os.path.join(data_path, "cleanlab_filtering_label_dist.png"))
 
 
         self.normalization = normalization
