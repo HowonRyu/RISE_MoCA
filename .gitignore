@@ -3,6 +3,7 @@ experiments/
 cleanlab_datalab_image.ipynb
 cleanlab_datalab.ipynb
 RISE_mae_visualize_4s.ipynb
+knn_graph.npz
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
