@@ -345,14 +345,11 @@ class RISE(Dataset):
             print(f"After stochastic augmentation: # X samples = {self.X.shape[0]}")
 
         if cleanlab_filter:
-            if RISE_bin_label:
-                cleanlab_indices_df = pd.read_csv(os.path.join(data_path, "cleanlab_flagged_bin.csv"))
-            else:
-                cleanlab_indices_df = pd.read_csv(os.path.join(data_path, "cleanlab_flagged.csv"))
-            cleanlab_indices = torch.tensor(cleanlab_indices_df["index"].values, dtype=torch.long)
-            all_indices = torch.arange(self.X.shape[0])
-            mask = ~torch.isin(all_indices, cleanlab_indices)
-            cleanlab_indices = all_indices[mask]
+            cleanlab_indices_df = pd.read_csv(os.path.join(data_path, f"stat_feat_df/cleanlab_df_{prefix}.csv"))
+            cleanlab_indices_df = cleanlab_indices_df.reset_index()
+            safe_df = cleanlab_indices_df[cleanlab_indices_df['is_label_issue'] == 0]  
+            cleanlab_indices = torch.tensor(safe_df["index"].values, dtype=torch.long)
+
             self.X = self.X[cleanlab_indices]
             self.y = self.y[cleanlab_indices]
             self.labels = self.labels[cleanlab_indices]
@@ -370,7 +367,7 @@ class RISE(Dataset):
             plt.xlabel("Labels")
             plt.ylabel("Counts")
             plt.title("Label Distribution After Cleanlab Filtering")
-            plt.savefig(os.path.join(data_path, "cleanlab_filtering_label_dist.png"))
+            plt.savefig(os.path.join(data_path, f"cleanlab_filtering_label_dist_{prefix}.png"))
 
 
         self.normalization = normalization

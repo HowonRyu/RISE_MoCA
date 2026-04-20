@@ -162,12 +162,12 @@ def evaluate(data_loader, model, device, args, plot_save_name=None, plot_title=N
         preds_tensor = torch.tensor(preds_list)
         if args.train_eval:
             save_path_train = os.path.join(args.data_path, f'{plot_save_name}_pred_train.pt')
-            save_path_test = os.path.join(args.data_path, f'{plot_save_name}_pred_test.pt')
             torch.save(torch.tensor(preds_tensor), save_path_train)
         else:
+            save_path_test = os.path.join(args.data_path, f'{plot_save_name}_pred_test.pt')
             torch.save(torch.tensor(preds_tensor), save_path_test)
 
-    elif args.confusion_matrix_plot:
+    if args.confusion_matrix_plot:
         preds_list = list(itertools.chain.from_iterable(preds))
         targets_list = list(itertools.chain.from_iterable(targets))
 

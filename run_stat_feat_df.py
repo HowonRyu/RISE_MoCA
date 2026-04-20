@@ -8,7 +8,7 @@ from scipy.stats import kurtosis, skew
 from mae_visualize_utils import load_dataset, load_model_ft, mae_classification_pass
 
 
-def process_gt_pred_pair_data(patch_size=[1, 60], data_path="/niddk-data-central/mae_hr/rise_moca_4AP_20s_transition",
+def process_stat_feat_data(patch_size=[1, 60], data_path="/niddk-data-central/mae_hr/rise_moca_4AP_20s_transition",
                             test_data=True, RISE_bin_label=False, device="cuda",
                             finetuned_checkpoint_path=None, produce_plots=False,
                             output_dir="/niddk-data-central/mae_hr/RISE_PH/plots"):
@@ -166,8 +166,8 @@ def process_gt_pred_pair_data(patch_size=[1, 60], data_path="/niddk-data-central
 
 
     #### Save the outputs
-    pred_gt_df_path = f"{data_path}/pred_gt_df/pred_gt_df_{split}.csv"
-    pred_gt_pair_sum_df_path = f"{data_path}/pred_gt_df/pred_gt_pair_sum_df_{split}.csv"
+    pred_gt_df_path = f"{data_path}/stat_feat_df/stat_feat_df_{split}.csv"
+    pred_gt_pair_sum_df_path = f"{data_path}/stat_feat_df/stat_feat_sum_df_{split}.csv"
 
     pred_gt_df.to_csv(pred_gt_df_path, index=False)
     pred_gt_pair_sum_df.to_csv(pred_gt_pair_sum_df_path, index=False)
@@ -246,7 +246,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
 
-    process_gt_pred_pair_data(
+    process_stat_feat_data(
         patch_size=args.patch_size,
         data_path=args.data_path,
         test_data=args.test_data,
