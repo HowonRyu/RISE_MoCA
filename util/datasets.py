@@ -134,9 +134,9 @@ class UCIHAR(Dataset):
 
 
 class RISE(Dataset):
-    def __init__(self, data_path, alt, is_test=False, normalization_chan=False, use_transition_sub_label = False, RISE_bin_label = False,
+    def __init__(self, data_path, alt, is_test=False, normalization_chan=False, use_transition_sub_label = True, RISE_bin_label = False,
                  normalization=False, transform=False, mix_up=False, RISE_hz = 30, hz_adjustment=False, subject_level_analysis=False,
-                 active_aug=False, aug_method=None, rebalance=False, cleanlab_filter=None):
+                 active_aug=False, aug_method=None, rebalance=False, cleanlab_filter=False):
 
         if is_test:
             prefix = "test"

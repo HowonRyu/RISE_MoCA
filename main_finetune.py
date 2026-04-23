@@ -14,6 +14,7 @@ import datetime
 import json
 import numpy as np
 import os
+import pandas as pd
 import time
 from pathlib import Path
 
@@ -41,6 +42,15 @@ import models_vit_mask
 
 from engine_finetune import train_one_epoch, evaluate
 from torch.utils.data import Subset
+
+class IndexedDataset(torch.utils.data.Dataset):
+    def __init__(self, dataset):
+        self.dataset = dataset
+    def __len__(self):
+        return len(self.dataset)
+    def __getitem__(self, idx):
+        X, y = self.dataset[idx]
+        return X, y, idx
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for image classification', add_help=False)
@@ -79,7 +89,7 @@ def get_args_parser():
                         help='Use class weights for imbalanced data')
     parser.set_defaults(use_class_weights=False) # changed - added    
     parser.add_argument('--weight_method', type=str, default='inverse_freq',
-                        choices=['inverse_freq', 'normalized', 'sqrt'],
+                        choices=['inverse_freq', 'normalized', 'sqrt', 'cleanlab'],
                         help='Method to calculate class weights')
 
 
@@ -439,28 +449,46 @@ def main(args):
     elif args.smoothing > 0.:
         criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
     else:
+        sample_weights = None
         if args.use_class_weights:
-            train_targets = []
-            for _, target in data_loader_train:
-                train_targets.extend(target.numpy())
-            
-            class_counts = np.bincount(train_targets)
-            
-            if args.weight_method == 'inverse_freq':
-                class_weights = len(train_targets) / (len(class_counts) * class_counts)
-            elif args.weight_method == 'normalized':
-                class_weights = 1. / class_counts
-                class_weights = class_weights / class_weights.sum() * len(class_counts)
-            elif args.weight_method == 'sqrt':
-                class_weights = 1. / np.sqrt(class_counts)
-                class_weights = class_weights / class_weights.sum() * len(class_counts)
-            
-            class_weights = torch.FloatTensor(class_weights).to(device)
-            print(f"Using class weights: {class_weights}")
+            if args.weight_method == 'cleanlab':
+                cleanlab_df = pd.read_csv(os.path.join(args.data_path, "stat_feat_df/cleanlab_df_train.csv"))
+                raw_scores = torch.FloatTensor(cleanlab_df['label_score'].values)
+                sample_weights = (raw_scores / raw_scores.mean()).to(device)
+                dataset_train = IndexedDataset(dataset_train)
+                data_loader_train = torch.utils.data.DataLoader(
+                    dataset_train, sampler=sampler_train,
+                    batch_size=args.batch_size,
+                    num_workers=args.num_workers,
+                    pin_memory=args.pin_mem,
+                    drop_last=True,
+                )
+                class_weights = None
+            else:
+                train_targets = []
+                for _, target in data_loader_train:
+                    train_targets.extend(target.numpy())
+
+                class_counts = np.bincount(train_targets)
+
+                if args.weight_method == 'inverse_freq':
+                    class_weights = len(train_targets) / (len(class_counts) * class_counts)
+                elif args.weight_method == 'normalized':
+                    class_weights = 1. / class_counts
+                    class_weights = class_weights / class_weights.sum() * len(class_counts)
+                elif args.weight_method == 'sqrt':
+                    class_weights = 1. / np.sqrt(class_counts)
+                    class_weights = class_weights / class_weights.sum() * len(class_counts)
+
+                class_weights = torch.FloatTensor(class_weights).to(device)
+                print(f"Using class weights: {class_weights}")
         else:
             class_weights = None
 
-        criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+        if sample_weights is not None:
+            criterion = torch.nn.CrossEntropyLoss(reduction='none')
+        else:
+            criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
     print("criterion = %s" % str(criterion))
 
@@ -488,6 +516,7 @@ def main(args):
             args.clip_grad, mixup_fn,
             log_writer=log_writer,
             args=args, device=device,
+            sample_weights=sample_weights,
         )
         if args.output_dir and (epoch % args.dump_freq == 0 or epoch + 1 == args.epochs): # changed - added and~ for less frequent dump
             misc.save_model(

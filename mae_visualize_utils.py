@@ -510,8 +510,9 @@ def mae_classification_pass(dataset, model, batch_size=100, device='cuda', num_w
 
 
 
-def attention_plot(which_true_label, which_pred_label, which_sample, dataset, model_mae_classifier,
-                   preds_list, device, save_plot=False, font_size_main=12, save_dir='/niddk-data-central/mae_hr/RISE_PH/plots/attn'):
+def attention_plot(which_true_label, which_pred_label, which_sample, dataset, model_mae_classifier, safe_indices,
+                   preds_list, device, save_plot=False, font_size_main=12, plot_attention=True, 
+                   save_dir='/niddk-data-central/mae_hr/RISE_PH/plots/attn'):
     
     # select sample
     label_indices = np.where(
@@ -523,6 +524,12 @@ def attention_plot(which_true_label, which_pred_label, which_sample, dataset, mo
     sample_y         = dataset[sample_idx][1].item()
     sample_ap_labels = dataset.labels[sample_idx]
     ap_labels_unique = np.unique(sample_ap_labels)
+
+    safe_indicator = (True if sample_idx in safe_indices else False)
+    if safe_indicator:
+        filter_msg = "not flagged"
+    else:
+        filter_msg = "flagged"
 
     with torch.no_grad():
         output = model_mae_classifier(sample_x)
@@ -538,6 +545,7 @@ def attention_plot(which_true_label, which_pred_label, which_sample, dataset, mo
                                0.3: "Lying",     0.4: "Seated Transport"}
 
     print(f"Sample index: {sample_idx}, "
+          f"Flagged: {filter_msg}, "
           f"Label: {lab_to_name[sample_y]}, "
           f"Pred: {lab_to_name[pred]}, "
           f"AP org labels: {[lab_to_name[lab] for lab in ap_labels_unique]}")
@@ -620,11 +628,12 @@ def attention_plot(which_true_label, which_pred_label, which_sample, dataset, mo
         attn_scores = axis_attn[ch]
 
         # attention background (10 patches, each covers full time_steps span)
-        for i, score in enumerate(attn_scores):
-            start = i * patch_size_time
-            end   = start + patch_size_time
-            color = cmap_attn(score / attn_global_max)
-            ax.axvspan(start, end, color=color, alpha=0.8, zorder=0)
+        if plot_attention:
+            for i, score in enumerate(attn_scores):
+                start = i * patch_size_time
+                end   = start + patch_size_time
+                color = cmap_attn(score / attn_global_max)
+                ax.axvspan(start, end, color=color, alpha=0.8, zorder=0)
 
         # raw signal for this axis
         ax.plot(raw_signal[ch], color=axis_col[ch], linewidth=1,
@@ -641,7 +650,7 @@ def attention_plot(which_true_label, which_pred_label, which_sample, dataset, mo
 
         if ch == 0:
             ax.set_title(
-                f'Raw signal and attention score — {lab_to_name[sample_y]} predicted as {lab_to_name[pred]}',
+                f'Raw signal and attention score — {lab_to_name[sample_y]} predicted as {lab_to_name[pred]} ({filter_msg})',
                 color='black', fontsize=font_size_main + 3
             )
 
@@ -649,11 +658,12 @@ def attention_plot(which_true_label, which_pred_label, which_sample, dataset, mo
     ax_avg = axes_signal[3]
 
     # averaged attention score across axes
-    for i, score in enumerate(avg_attn):
-        start = i * patch_size_time
-        end   = start + patch_size_time
-        color = cmap_attn(score / attn_global_max)
-        ax_avg.axvspan(start, end, color=color, alpha=0.8, zorder=0)
+    if plot_attention:
+        for i, score in enumerate(avg_attn):
+            start = i * patch_size_time
+            end   = start + patch_size_time
+            color = cmap_attn(score / attn_global_max)
+            ax_avg.axvspan(start, end, color=color, alpha=0.8, zorder=0)
 
 
     for ch in range(3):
@@ -682,15 +692,18 @@ def attention_plot(which_true_label, which_pred_label, which_sample, dataset, mo
     ax_label.legend(loc='upper right', fontsize=font_size_main)
 
     # colorbar
-    sm = plt.cm.ScalarMappable(
-        cmap=cmap_attn,
-        norm=plt.Normalize(vmin=0, vmax=attn_global_max)
-    )
-    sm.set_array([])
-    cbar = plt.colorbar(sm, cax=cax)
-    cbar.set_label('Attention Score', color='black')
-    cbar.ax.yaxis.set_tick_params(color='black')
-    plt.setp(cbar.ax.yaxis.get_ticklabels(), color='black')
+    if plot_attention:
+        sm = plt.cm.ScalarMappable(
+            cmap=cmap_attn,
+            norm=plt.Normalize(vmin=0, vmax=attn_global_max)
+        )
+        sm.set_array([])
+        cbar = plt.colorbar(sm, cax=cax)
+        cbar.set_label('Attention Score', color='black')
+        cbar.ax.yaxis.set_tick_params(color='black')
+        plt.setp(cbar.ax.yaxis.get_ticklabels(), color='black')
+    else:
+        cax.set_visible(False)
 
     if save_plot:
         save_path = f'{save_dir}/attn_score_t{which_true_label}_p{which_pred_label}_#{which_sample}.png'
