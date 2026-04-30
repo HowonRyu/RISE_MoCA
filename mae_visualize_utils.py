@@ -8,7 +8,7 @@ import torch.nn as nn
 from functools import partial
 from timm.utils import accuracy
 
-
+from torch.utils.data import Subset
 from models_mae import MaskedAutoencoderViT
 import models_vit
 import models_vit_mask
@@ -19,11 +19,11 @@ from util.datasets import *
 
 
 def load_dataset(data_path, data = "RISE", test_data=True, RISE_hz=30, alt=True, normalization=False,
-                 transform=False, active_aug=False, use_transition_sub_label=False, RISE_bin_label=False):
+                 transform=False, active_aug=False, use_transition_sub_label=False, RISE_bin_label=False, cleanlab_filter=False):
 
     if data == "RISE":
         dataset = RISE(data_path=data_path, is_test=test_data, normalization=normalization,
-                    normalization_chan=False, RISE_hz=RISE_hz, mix_up=False, alt=alt, transform=transform,
+                    normalization_chan=False, RISE_hz=RISE_hz, mix_up=False, alt=alt, transform=transform, cleanlab_filter=cleanlab_filter,
                     use_transition_sub_label=use_transition_sub_label, RISE_bin_label=RISE_bin_label, active_aug = active_aug)
         labels = ["sedentary", "standing", "stepping", "sleeping", "secondary_lying", "seated_transport"]
 
@@ -33,14 +33,14 @@ def load_dataset(data_path, data = "RISE", test_data=True, RISE_hz=30, alt=True,
                 activity_labels = {0.0: "sedentary", 0.1: "active", 0.2: "mixed"}
             else:
                 labels = ["sedentary", "standing", "stepping", "lying", "seated_transport", "active_transition", "mixed_transition"]
-                activity_labels = {0.0: "sedentary", 0.1: "standing", 0.2: "stepping", 0.3: "lying", 0.4: "seated_transport", 0.5: "active_transition", 0.6:"mixed_transition"}
+                activity_labels = {0.0: "Sedentary", 0.1: "Standing", 0.2: "Stepping", 0.3: "Lying", 0.4: "Seated Transport", 0.5: "Transition-active", 0.6:"Transition-mixed"}
         else:
             if RISE_bin_label:
                 labels = ["sedentary", "active"]
                 activity_labels = {0.0: "sedentary", 0.1: "active"}
             else:
                 labels = ["sedentary", "standing", "stepping", "lying", "seated_transport", "transition"]
-                activity_labels = {0.0: "sedentary", 0.1: "standing", 0.2: "stepping", 0.3: "lying", 0.4: "seated_transport", 0.5: "transition"}
+                activity_labels = {0.0: "Sedentary", 0.1: "Standing", 0.2: "Stepping", 0.3: "Lying", 0.4: "Seated Transport", 0.5: "Transition"}
         
     elif data == "UCIHAR":
         dataset = UCIHAR(data_path=data_path, is_test=test_data, normalization=normalization,
@@ -301,7 +301,7 @@ def mae_reconstruction_loop(model, dataset, batch_size, mask_ratio, alt, norm_pi
 
 
 def plot_all_reconstruction(masked_all, x_prime_all, y_all, X_test_subseq_indicator, label_y, sample_sub, loss_MSE, loss_nMSE, test_only=False, 
-                            ms=0.5, figsize=(30, 50), plot_save=False, plot_save_name=None):
+                            ms=0.5, figsize=(30, 50)):
     """
     only use for UCI-HAR data
     """
@@ -419,11 +419,9 @@ def plot_all_reconstruction(masked_all, x_prime_all, y_all, X_test_subseq_indica
 
     plt.suptitle(title)
     plt.subplots_adjust(hspace=0.5, top=0.97)
+    plt.show()
 
-    if plot_save:
-        plt.savefig(f'{plot_save_name}_recon_plot.png')
-    else:
-        plt.show()
+        
 
 
 
@@ -510,10 +508,15 @@ def mae_classification_pass(dataset, model, batch_size=100, device='cuda', num_w
 
 
 
-def attention_plot(which_true_label, which_pred_label, which_sample, dataset, model_mae_classifier, safe_indices,
-                   preds_list, device, save_plot=False, font_size_main=12, plot_attention=True, 
+def attention_plot(which_true_label, which_pred_label, which_sample, dataset, model_mae_classifier, cleanlab_df,
+                   preds_list, device, save_plot=False, font_size_main=12, plot_attention=True, display_filtering_pred=False,
+                   collapse_plot=False, plot_suffix=None, legend_loc='best',
                    save_dir='/niddk-data-central/mae_hr/RISE_PH/plots/attn'):
-    
+
+    # derive safe indices from cleanlab_df
+    safe_df      = cleanlab_df[cleanlab_df['is_label_issue'] == 0]
+    safe_indices = torch.tensor(safe_df["index"].values, dtype=torch.long)
+
     # select sample
     label_indices = np.where(
         (np.array(dataset.y) == which_true_label) &
@@ -523,6 +526,7 @@ def attention_plot(which_true_label, which_pred_label, which_sample, dataset, mo
     sample_x         = dataset[sample_idx][0].unsqueeze(0).to(device)
     sample_y         = dataset[sample_idx][1].item()
     sample_ap_labels = dataset.labels[sample_idx]
+    no_filtering_pred = preds_list[sample_idx]
     ap_labels_unique = np.unique(sample_ap_labels)
 
     safe_indicator = (True if sample_idx in safe_indices else False)
@@ -531,9 +535,12 @@ def attention_plot(which_true_label, which_pred_label, which_sample, dataset, mo
     else:
         filter_msg = "flagged"
 
+    label_score_row = cleanlab_df[cleanlab_df['index'] == sample_idx]
+    label_score     = label_score_row['label_score'].values[0] if len(label_score_row) > 0 else float('nan')
+
     with torch.no_grad():
         output = model_mae_classifier(sample_x)
-        pred   = output.argmax(dim=1).item()
+        filtering_pred   = output.argmax(dim=1).item()
 
     # initialization
     lab_to_name  = {0: "Sedentary", 1: "Standing", 2: "Stepping", 3: "Lying",
@@ -544,10 +551,12 @@ def attention_plot(which_true_label, which_pred_label, which_sample, dataset, mo
     activity_labels_ap_org = {0.0: "Sedentary", 0.1: "Standing", 0.2: "Stepping",
                                0.3: "Lying",     0.4: "Seated Transport"}
 
-    print(f"Sample index: {sample_idx}, "
-          f"Flagged: {filter_msg}, "
-          f"Label: {lab_to_name[sample_y]}, "
-          f"Pred: {lab_to_name[pred]}, "
+    print(f"Sample index: {sample_idx},\n"
+          f"Flagged: {filter_msg},\n"
+          f"Label score: {label_score:.4f},\n"
+          f"Label: {lab_to_name[sample_y]},\n"
+          f"No filtering model pred: {lab_to_name[no_filtering_pred]},\n"
+          f"Filtering model pred: {lab_to_name[filtering_pred]},\n"
           f"AP org labels: {[lab_to_name[lab] for lab in ap_labels_unique]}")
 
     # extract attention (same hook logic as before)
@@ -608,54 +617,69 @@ def attention_plot(which_true_label, which_pred_label, which_sample, dataset, mo
     # global attention max for consistent colormap scaling
     attn_global_max = last_layer_attn.max()
 
-    #### PLOTS — 5 rows
-    fig = plt.figure(figsize=(14, 10))
-    gs  = gridspec.GridSpec(
-        5, 2,
-        height_ratios=[1.5, 1.5, 1.5, 3, 1.5],
-        width_ratios=[20, 1],
-        hspace=0.08,
-        wspace=0.05
-    )
+    #   set title text
+    if display_filtering_pred:
+        title_text =  f'[activPAL:{lab_to_name[sample_y]}] & [MoCA prediction:{lab_to_name[filtering_pred]}] ({filter_msg}, label score: {label_score:.4f})'
+    else:
+        title_text =  f'[activPAL:{lab_to_name[sample_y]}] & [MoCA prediction:{lab_to_name[no_filtering_pred]}] ({filter_msg}, label score: {label_score:.4f})'
 
-    axes_signal = [fig.add_subplot(gs[i, 0]) for i in range(4)]
-    ax_label    = fig.add_subplot(gs[4, 0])
-    cax         = fig.add_subplot(gs[0:4, 1])  # shared colorbar spanning rows 0-3
+    #### PLOTS
+    if collapse_plot:
+        fig = plt.figure(figsize=(14, 5))
+        gs  = gridspec.GridSpec(
+            2, 2,
+            height_ratios=[3, 1.5],
+            width_ratios=[20, 1],
+            hspace=0.08,
+            wspace=0.05
+        )
+        ax_avg   = fig.add_subplot(gs[0, 0])
+        ax_label = fig.add_subplot(gs[1, 0])
+        cax      = fig.add_subplot(gs[0, 1])
+    else:
+        fig = plt.figure(figsize=(14, 10))
+        gs  = gridspec.GridSpec(
+            5, 2,
+            height_ratios=[1.5, 1.5, 1.5, 3, 1.5],
+            width_ratios=[20, 1],
+            hspace=0.08,
+            wspace=0.05
+        )
+        axes_signal = [fig.add_subplot(gs[i, 0]) for i in range(4)]
+        ax_label    = fig.add_subplot(gs[4, 0])
+        cax         = fig.add_subplot(gs[0:4, 1])  # shared colorbar spanning rows 0-3
+        
+        
+        # Row1-3
+        for ch in range(3):
+            ax = axes_signal[ch]
+            attn_scores = axis_attn[ch]
 
-    # Row1-3
-    for ch in range(3):
-        ax = axes_signal[ch]
-        attn_scores = axis_attn[ch]
+            if plot_attention:
+                for i, score in enumerate(attn_scores):
+                    start = i * patch_size_time
+                    end   = start + patch_size_time
+                    color = cmap_attn(score / attn_global_max)
+                    ax.axvspan(start, end, color=color, alpha=0.8, zorder=0)
 
-        # attention background (10 patches, each covers full time_steps span)
-        if plot_attention:
-            for i, score in enumerate(attn_scores):
-                start = i * patch_size_time
-                end   = start + patch_size_time
-                color = cmap_attn(score / attn_global_max)
-                ax.axvspan(start, end, color=color, alpha=0.8, zorder=0)
+            ax.plot(raw_signal[ch], color=axis_col[ch], linewidth=1,
+                    label=f'Accelerometer {axis_names[ch]}', zorder=2)
 
-        # raw signal for this axis
-        ax.plot(raw_signal[ch], color=axis_col[ch], linewidth=1,
-                label=f'Accelerometer {axis_names[ch]}', zorder=2)
+            for i in range(1, n_patches_per_axis):
+                ax.axvline(x=i * patch_size_time, color='gray', linestyle='--',
+                           linewidth=0.5, alpha=0.5)
 
-        # patch boundary lines
-        for i in range(1, n_patches_per_axis):
-            ax.axvline(x=i * patch_size_time, color='gray', linestyle='--',
-                       linewidth=0.5, alpha=0.5)
+            ax.set_ylabel('', fontsize=font_size_main)
+            ax.legend(loc=legend_loc, fontsize=font_size_main)
+            ax.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
 
-        ax.set_ylabel('', fontsize=font_size_main)
-        ax.legend(loc='upper right', fontsize=font_size_main)
-        ax.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+            if ch == 0:
+                ax.set_title(
+                    title_text,
+                    color='black', fontsize=font_size_main + 3
+                )
 
-        if ch == 0:
-            ax.set_title(
-                f'Raw signal and attention score — {lab_to_name[sample_y]} predicted as {lab_to_name[pred]} ({filter_msg})',
-                color='black', fontsize=font_size_main + 3
-            )
-
-    # Row4
-    ax_avg = axes_signal[3]
+        ax_avg = axes_signal[3]
 
     # averaged attention score across axes
     if plot_attention:
@@ -673,9 +697,14 @@ def attention_plot(which_true_label, which_pred_label, which_sample, dataset, mo
         ax_avg.axvline(x=i * patch_size_time, color='gray', linestyle='--',
                        linewidth=0.5, alpha=0.5)
 
-    ax_avg.set_ylabel('', fontsize=font_size_main)
-    ax_avg.legend(loc='upper right', fontsize=font_size_main, ncol=3)
+    ax_avg.set_ylabel('ActiGraph \n Acceleration (g)', fontsize=font_size_main)
+    ax_avg.legend(loc=legend_loc, fontsize=font_size_main, ncol=1)
     ax_avg.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+
+    if collapse_plot:
+        ax_avg.set_title(title_text,
+            color='black', fontsize=font_size_main + 3
+        )
 
     # Row5
     ax_label.plot(sample_ap_labels / 10, color='black', linewidth=1,
@@ -689,7 +718,7 @@ def attention_plot(which_true_label, which_pred_label, which_sample, dataset, mo
     ax_label.set_yticklabels(list(activity_labels_ap_org.values()), fontsize=font_size_main)
     ax_label.set_xlabel('Data Points', fontsize=font_size_main)
     ax_label.set_ylabel('AP Label', fontsize=font_size_main)
-    ax_label.legend(loc='upper right', fontsize=font_size_main)
+    ax_label.legend(loc=legend_loc, fontsize=font_size_main)
 
     # colorbar
     if plot_attention:
@@ -706,6 +735,101 @@ def attention_plot(which_true_label, which_pred_label, which_sample, dataset, mo
         cax.set_visible(False)
 
     if save_plot:
-        save_path = f'{save_dir}/attn_score_t{which_true_label}_p{which_pred_label}_#{which_sample}.png'
+        if plot_attention:
+            save_path = f'{save_dir}/attn_score_t{which_true_label}_p{which_pred_label}_#{which_sample}_{plot_suffix}.png'
+        else:
+            save_path = f'{save_dir}/raw_signal_t{which_true_label}_p{which_pred_label}_#{which_sample}_{plot_suffix}.png'
         plt.savefig(save_path, dpi=500, bbox_inches='tight')
     plt.show()
+
+
+
+
+### Superimposed plotting
+
+
+def plot_recon_classification(label_type, m, n_idx, dataset, classification_model, model_mae, activity_labels, input_length,
+                              mask_ratio=0.75, alt=True, device='cuda', figsize=(20, 15), fs_default=13,
+                              plot_save=None, show_suptitle=False, y_marg=0.3):
+
+    start_idx = np.where(dataset.y == label_type)[0][n_idx]
+
+    # subset data
+    indices = list(range(start_idx, start_idx + m))
+    dataset_sub = Subset(dataset, indices)
+
+    preds_list, targets_list, acc1 = mae_classification_pass(dataset_sub, classification_model, batch_size=30, device=device)
+    masked_all, paste_all, x_prime_all, y_all, x_squeeze_all, loss_MSE, loss_nMSE = mae_reconstruction_loop(
+        model=model_mae, dataset=dataset_sub, batch_size=10,
+        mask_ratio=mask_ratio, alt=alt, norm_pix_loss=False, import_mask=None, device=device)
+    print(masked_all.shape)
+
+    masked    = masked_all.reshape(input_length*m, 3).unsqueeze(0).unsqueeze(0).cpu()
+    paste     = paste_all.reshape(input_length*m, 3).unsqueeze(0).unsqueeze(0).cpu()
+    x_prime   = x_prime_all.reshape(input_length*m, 3).unsqueeze(0).unsqueeze(0).cpu()
+    y         = y_all.reshape(input_length*m, 3).unsqueeze(0).unsqueeze(0).cpu()
+    x_squeeze = x_squeeze_all.reshape(input_length*m, 3).unsqueeze(0).unsqueeze(0).cpu()
+
+    preds_all   = np.repeat(preds_list, input_length) / 10 
+    targets_all = np.repeat(targets_list, input_length) / 10 
+
+    linestyle          = ""
+    marg               = 0.5
+    ms                 = 2
+    linestyle_unmasked = ''
+
+    modalities = ["Accelerometer"]
+    axes       = ["X", "Y", "Z"]
+    fig, axs   = plt.subplots(len(axes), len(modalities), figsize=figsize)
+
+
+    for i, modal in enumerate(modalities):
+        for j, ax in enumerate(axes):
+
+            axs[j].plot(x_prime[0, 0, :, 3*i+j], label="original (masked)",
+                        color="black", marker='o', alpha=0.8, linestyle=linestyle, markersize=ms+3)
+
+            unmasked_x = masked[0, 0, :, 3*i+j] != 0
+            indices_x  = np.where(unmasked_x)[0]
+            axs[j].plot(indices_x, masked[0, 0, unmasked_x, 3*i+j], label="original (unmasked)",
+                        color="orange", marker='o', alpha=0.8, linestyle=linestyle_unmasked, markersize=ms+3)
+
+            axs[j].plot(y[0, 0, :, 3*i+j], label="reconstructed",
+                        color="blue", marker='o', alpha=0.8, linestyle=linestyle, markersize=ms+3)
+
+            axs[j].plot(preds_all,   label="pred",  color="green", linewidth=4)
+            axs[j].plot(targets_all, label="truth", color="red",   linewidth=4)
+
+            # formatting — all explicit, no rcParams interference
+            axs[j].legend(fontsize=fs_default - 3)
+            axs[j].set_title(f"{modal} {ax}", fontsize=fs_default + 10)   # bigger titles
+            axs[j].tick_params(axis='both', labelsize=fs_default - 3)     # smaller ticks
+
+            org_unmasked  = masked[0, 0, unmasked_x, 3*i+j]
+            reconstructed = y[0, 0, :, 3*i+j]
+            ul = max([max(org_unmasked)+marg, max(reconstructed)+marg, 0.6])
+            ll = min([min(org_unmasked)-marg, min(reconstructed)-marg, -0.1])
+            axs[j].set_ylim([ll - y_marg, ul + y_marg])
+
+            # horizontal trace lines for activity labels
+            for tick_val in activity_labels.keys():
+                axs[j].axhline(y=tick_val, color='grey', linestyle='--', linewidth=0.5, alpha=0.5)
+
+            axs[j].set_ylabel("Acceleration (g)", fontsize=fs_default)
+
+            # activity labels as secondary axis
+            secax = axs[j].secondary_yaxis('right')
+            secax.set_yticks(list(activity_labels.keys()))
+            secax.set_yticklabels(list(activity_labels.values()), fontsize=fs_default - 3)  # match ticks
+
+            # patch boundaries
+            for k in range(0, masked.shape[2], input_length):
+                axs[j].axvline(x=k, color='gray', linestyle='--', linewidth=0.5)
+
+    if show_suptitle:
+        plt.suptitle(f"Reconstruction and classification for {m} sample intervals ({start_idx}-{start_idx+m})",
+                     fontsize=fs_default+10)
+    plt.subplots_adjust(hspace=0.2, top=0.9)
+    plt.show()
+    if plot_save:
+        fig.savefig(f"/niddk-data-central/mae_hr/RISE_PH/plots/{plot_save}", dpi=500, bbox_inches='tight')

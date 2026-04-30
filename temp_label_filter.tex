@@ -1,0 +1,31 @@
+\subsection{Label Filtering through Statistical Features}
+\label{sec_label_filtering}
+During the initial evaluation of the activity recognition model, suspicious label cases were identified where the activPAL ground truth labels appeared inconsistent with the underlying raw accelerometer signals. For example, certain time intervals, which were labeled as Sedentary or Standing by activPAL, exhibited periodic fluctuations in raw signals, a pattern indicative of walking motions. Conversely, some cases exhibited near-zero fluctuation in raw signals across all axes, indicative of stationary motions, with highly active activPAL ground truth labels such as Stepping. Representative examples of these discrepant cases are shown in Figure \ref{fig_sus_cases}.
+
+
+Such inconsistencies are not unique to this dataset. Existing literature shows the inherent challenges of capturing the right labels from the free-living accelerometer readings, even when using devices such as activPAL, which is widely considered to be a standard approach \cite{}. The inconsistencies can be attributed to variability arising from device placement, temporal misalignment between annotation events and device recordings, and the challenges of transitional behaviors between discretely defined activity categories \cite{}.
+
+
+To formally quantify the observed discrepancies in terms of statistical features, the following statistical descriptors were used:
+
+\begin{itemize}
+    \item \textbf{Central tendency}: mean, median
+    \item \textbf{Dispersion}: standard deviation (SD), root mean square (RMS), interquartile range (IQR), mean absolute deviation (MAD)
+    \item \textbf{Range}: minimum, maximum
+    \item \textbf{Shape}: skewness, kurtosis
+    \item \textbf{Frequency domain}: spectral energy $E = \sum_{k=0}^{\lfloor N/2 \rfloor} |X_k|^2$, where $X_k$ is the $k$-th DFT coefficient of the length-$N$ signal~\cite{oppenheim1999discrete}
+\end{itemize}
+
+
+The total of eleven statistical descriptors were computed for each axes of the accelerometer ($x$, $y$, $z$) signals on top of the scalar vector magnitude, defined $\mathrm{VM} = \sqrt{x^2 + y^2 + z^2}$, resulting in $11 \times 4 = 44$ features per 20-second time interval.
+
+
+Per-class feature distributions confirmed that the statistical summaries showed meaningful separation between activity classes and that the feature-based groupings were in many cases more consistent with the model's predictions than with the annotated ground-truth labels. ((likely will put the plots backing this point under supplementary materials)) This prompted the adoption of label issue detection pipeline provided by Cleanlab \cite{} using 44-dimensional statistical feature vector as input to filter out potentially mislabeled intervals.
+
+
+
+The data filtering involves the following steps. Firstly, a Histogram-based Gradient Boosting Classification tree model is trained on the standardized statistical features (zero mean and unit variance) using 5-fold stratified cross-validation. For each interval, the predicted probability vector for the 7 classes $\hat{\bf{P}} \in \mathbb{R}^{N \times 7}$, where $N$ is the number of samples, is gathered from the hold-out fold. Then, a $k$-nearest-neighbor(KNN) graph is computed over the standardized features using Euclidean distance under the expectation that the intervals close in feature space are expected to be in the same ground truth class. The KNN graph together with the prediction matrix $\hat{\bf{P}}$ goes through the Confidence Learning framework \cite{northcutt2017learning, northcutt2021confident}, estimating the joint distribution of the supposed ground truth labels and latent true labels by thresholding class-conditional predicted probabilities. The pipeline outputs the label quality score (on $[0, 1]$ scale) where a score near 1 indicates a confidently correct label, while a score near 0 indicates a likely mislabeled interval.Intervals are ranked by this score, and those below the automatically determined threshold are flagged as potentially having label issue and are filtered out.
+
+
+Because the statistical features used for the filtering are computed directly from raw signal properties and are not explicitly shared in the main activity recognition model, this process constitutes an independent validation layer. Through this step, a more coherent data distribution is maintained, lending additional credibility to the final activity recognition model.
+

@@ -112,7 +112,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device, args, plot_save_name=None, plot_title=None):
+def evaluate(data_loader, model, device, args, plot_save_name=None, plot_title=None, collapsed_result=False):
     criterion = torch.nn.CrossEntropyLoss()
 
     metric_logger = misc.MetricLogger(delimiter="  ")
@@ -157,13 +157,16 @@ def evaluate(data_loader, model, device, args, plot_save_name=None, plot_title=N
     all_targets = [t for batch in targets for t in batch]
     global_bal_acc = balanced_accuracy_score(all_targets, all_preds)
 
+
+
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print(f'* Acc@1 {metric_logger.meters["acc1"].global_avg:.4f} '
         f'Acc@2 {metric_logger.meters["acc2"].global_avg:.3f} '
         f'loss {metric_logger.meters["loss"].global_avg:.3f} '
         f'F1 {metric_logger.meters["F1"].global_avg:.2f} '
-        f'Balanced accuracy {global_bal_acc:.4f}')
+        f'Balanced accuracy {global_bal_acc:.6f}')
 
     if args.save_predictions:
         preds_list = list(itertools.chain.from_iterable(preds))
@@ -198,7 +201,7 @@ def evaluate(data_loader, model, device, args, plot_save_name=None, plot_title=N
         final_accordance = (preds_tensor == targets_tensor)
         final_acc1 = final_accordance.sum().item() / len(preds_list)
         cm_test = confusion_matrix(targets_list, preds_list)
-
+        final_balanced_acc1 = balanced_accuracy_score(targets_tensor, preds_tensor)
 
         # 3-classes confusion matrix (collapsed classes accuracy)
         if args.use_transition_sub_label:
@@ -211,6 +214,8 @@ def evaluate(data_loader, model, device, args, plot_save_name=None, plot_title=N
 
         final_accordance_collapsed = (preds_tensor_collapsed == targets_tensor_collapsed)
         final_acc1_collapsed = final_accordance_collapsed.sum().item() / len(preds_tensor_collapsed)
+
+        final_balanced_acc1_collapsed = balanced_accuracy_score(targets_tensor_collapsed, preds_tensor_collapsed)
         cm_test_collapsed = confusion_matrix(targets_tensor_collapsed.cpu().numpy(), preds_tensor_collapsed.cpu().numpy())
 
 
@@ -239,9 +244,9 @@ def evaluate(data_loader, model, device, args, plot_save_name=None, plot_title=N
         if (not args.use_transition_sub_label) & (args.RISE_bin_label):
             plt.title(f'{plot_title}; Accuracy = {final_acc1:.4f}, sen={sensitivity:.3f}, spec={specificity:.3f}, PPV={ppv:.3f}, NPV={npv:.3f}')
         else:
-            plt.title(f'{plot_title}; Accuracy = {final_acc1:.4f}')
+            plt.title(f'{plot_title};\n Accuracy = {final_acc1*100:.4f}, Balanced Accuracy = {final_balanced_acc1*100:.4f}')
         save_dir = "/niddk-data-central/mae_hr/RISE_PH/plots"
-        plt.savefig(f"{save_dir}/{plot_save_name}_confusion_matrix.png", bbox_inches='tight')
+        plt.savefig(f"{save_dir}/cm_{plot_save_name}.png", bbox_inches='tight')
         plt.show()
 
 
@@ -252,9 +257,9 @@ def evaluate(data_loader, model, device, args, plot_save_name=None, plot_title=N
         plt.xlabel('Predicted Labels', fontsize=13)
         plt.ylabel('True Labels', fontsize=13)
         
-        plt.title(f'{plot_title} (collapsed); Accuracy = {final_acc1_collapsed:.4f}')
+        plt.title(f'{plot_title} (collapsed);\n Accuracy = {final_acc1_collapsed*100:.4f}, Balanced Accuracy = {final_balanced_acc1_collapsed*100:.4f}')
         save_dir = "/niddk-data-central/mae_hr/RISE_PH/plots"
-        plt.savefig(f"{save_dir}/{plot_save_name}_collapsed_confusion_matrix.png", bbox_inches='tight')
+        plt.savefig(f"{save_dir}/cm_collapsed_{plot_save_name}.png", bbox_inches='tight')
         plt.show()
 
 

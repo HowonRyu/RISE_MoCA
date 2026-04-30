@@ -87,7 +87,7 @@ def get_args_parser():
     parser.set_defaults(finetune_interpolate_patches=False) # changed - added
     parser.add_argument('--use_class_weights', action='store_true',
                         help='Use class weights for imbalanced data')
-    parser.set_defaults(use_class_weights=False) # changed - added    
+    parser.set_defaults(use_class_weights=False) 
     parser.add_argument('--weight_method', type=str, default='inverse_freq',
                         choices=['inverse_freq', 'normalized', 'sqrt', 'cleanlab'],
                         help='Method to calculate class weights')
@@ -325,15 +325,7 @@ def main(args):
     else:
         log_writer = None
 
-    if args.eval:
-        data_loader_train = torch.utils.data.DataLoader(
-            dataset_train, sampler=sampler_train,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            pin_memory=args.pin_mem,
-            drop_last=False,
-        )
-    else:
+    if not args.eval:
         data_loader_train = torch.utils.data.DataLoader(
             dataset_train, sampler=sampler_train,
             batch_size=args.batch_size,
@@ -443,13 +435,13 @@ def main(args):
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
 
+    sample_weights = None
     if mixup_fn is not None:
         # smoothing is handled with mixup label transform
         criterion = SoftTargetCrossEntropy()
     elif args.smoothing > 0.:
         criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
     else:
-        sample_weights = None
         if args.use_class_weights:
             if args.weight_method == 'cleanlab':
                 cleanlab_df = pd.read_csv(os.path.join(args.data_path, "stat_feat_df/cleanlab_df_train.csv"))
@@ -496,12 +488,17 @@ def main(args):
 
     if args.eval:
         if args.train_eval:
+            data_loader_train = torch.utils.data.DataLoader(
+                dataset_train, sampler=sampler_train,
+                batch_size=args.batch_size,
+                num_workers=args.num_workers,
+                pin_memory=args.pin_mem, drop_last=False)
             test_stats = evaluate(data_loader=data_loader_train, model=model, device=device, args=args,
                                   plot_save_name=args.plot_save_name, plot_title=args.plot_title)
         else:
             test_stats = evaluate(data_loader=data_loader_val, model=model, device=device, args=args, 
                                   plot_save_name=args.plot_save_name, plot_title=args.plot_title)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.4f}%")
         exit(0)
 
     print(f"Start training for {args.epochs} epochs")
